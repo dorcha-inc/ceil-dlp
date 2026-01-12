@@ -1,4 +1,4 @@
-.PHONY: help install install-dev sync clean test lint format typecheck check build bump bump-patch bump-minor bump-major
+.PHONY: help install install-dev sync clean test lint format typecheck check build
 
 help: ## Show this help message
 	@echo "Available targets:"
@@ -58,44 +58,6 @@ check: ## Run all checks (lint, typecheck, format-check, test)
 
 build: ## Build the package
 	uv build
-
-bump: ## Bump version and create git tag (use: make bump VERSION=1.0.2 or make bump-patch/minor/major)
-	@if [ -z "$(VERSION)" ]; then \
-		echo "Error: VERSION not set. Use 'make bump VERSION=x.y.z' or 'make bump-patch/minor/major'"; \
-		exit 1; \
-	fi
-	@echo "Bumping version to $(VERSION)..."
-	@sed -i.bak "s/^version = \".*\"/version = \"$(VERSION)\"/" pyproject.toml && rm pyproject.toml.bak
-	@echo "Updated pyproject.toml to version $(VERSION)"
-	@git add pyproject.toml
-	@git commit -m "Bump version to $(VERSION)" || true
-	@git tag -a "v$(VERSION)" -m "Release v$(VERSION)"
-	@echo "Created git tag v$(VERSION)"
-	@echo "Run 'git push && git push --tags' to publish"
-
-bump-patch: ## Bump patch version (1.0.1 -> 1.0.2)
-	@current=$$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/'); \
-	major=$$(echo $$current | cut -d. -f1); \
-	minor=$$(echo $$current | cut -d. -f2); \
-	patch=$$(echo $$current | cut -d. -f3); \
-	new_patch=$$((patch + 1)); \
-	new_version="$$major.$$minor.$$new_patch"; \
-	$(MAKE) bump VERSION=$$new_version
-
-bump-minor: ## Bump minor version (1.0.1 -> 1.1.0)
-	@current=$$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/'); \
-	major=$$(echo $$current | cut -d. -f1); \
-	minor=$$(echo $$current | cut -d. -f2); \
-	new_minor=$$((minor + 1)); \
-	new_version="$$major.$$new_minor.0"; \
-	$(MAKE) bump VERSION=$$new_version
-
-bump-major: ## Bump major version (1.0.1 -> 2.0.0)
-	@current=$$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/'); \
-	major=$$(echo $$current | cut -d. -f1); \
-	new_major=$$((major + 1)); \
-	new_version="$$new_major.0.0"; \
-	$(MAKE) bump VERSION=$$new_version
 
 pre-commit: ## Run pre-commit hooks on all files
 	uv run pre-commit run --all-files

@@ -38,4 +38,33 @@ And you're done!
 ## Documentation
 
 - See the [Quick Start Guide](QUICKSTART.md) for installation and basic usage
-- Take a look at the [example configuration file](config.example.yaml).
+- Take a look at the [example configuration file](config.example.yaml)
+
+## Developing
+
+Contributions are always welcome!
+
+### Releasing a New Version
+
+To release a new version of `ceil-dlp`:
+
+1. Update the version in `pyproject.toml`:
+   ```toml
+   version = "1.2.0"
+   ```
+
+2. Commit the version change:
+   ```bash
+   git add pyproject.toml
+   git commit -m "Bump version to 1.2.0"
+   ```
+
+3. Create and push a git tag:
+   ```bash
+   git tag -a v1.2.0 -m "Release v1.2.0"
+   git push && git push --tags
+   ```
+
+4. The GitHub Actions workflow will automatically build the package and publish to PyPI when the tag is pushed
+
+The publish workflow triggers on tags matching `v*` (e.g., `v1.2.0`). Make sure your changes are committed and pushed before creating the tag.
