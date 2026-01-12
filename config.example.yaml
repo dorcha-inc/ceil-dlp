@@ -1,0 +1,68 @@
+# ceil-dlp Configuration Example
+# Copy this file to ceil-dlp.yaml and customize as needed
+
+# Operational mode: observe | warn | enforce
+# Default: enforce (secure-by-default)
+# - observe: Log all detections but never block or mask
+# - warn: Apply masking and log, but never block (adds warning headers)
+# - enforce: Block and mask according to policies (default)
+mode: enforce
+
+# Policies for each PII type
+policies:
+  credit_card:
+    action: block # block or mask
+    enabled: true
+    # No models field = block from all models (default)
+  ssn:
+    action: block
+    enabled: true
+  api_key:
+    action: block
+    enabled: true
+  pem_key:
+    action: block
+    enabled: true
+  jwt_token:
+    action: block
+    enabled: true
+  high_entropy_token:
+    action: block
+    enabled: true
+  email:
+    action: mask # Mask instead of block
+    enabled: true
+    # Example: model-aware policy - allow emails to self-hosted models
+    # models:
+    #   allow:
+    #     - "self-hosted/.*"  # regex pattern: any self-hosted model
+  phone:
+    action: mask
+    enabled: true
+  # Example: model-aware policy for source code (when implemented)
+  # source_code:
+  #   action: block
+  #   enabled: true
+  #   models:
+  #     allow:  # Only allow source code to self-hosted models
+  #       - "ollama/llama2"
+  #       - "local/.*"  # regex: any local model
+  #       - "self-hosted/.*"  # regex: any self-hosted model
+  #     block:  # Explicitly block from external models
+  #       - "openai/.*"
+  #       - "anthropic/.*"
+
+# Audit logging
+audit_log_path: /var/log/ceil-dlp/audit.log # Optional: path to audit log file
+# If not specified, logs to stdout
+
+# PII types to detect (if not specified, all are enabled)
+# enabled_pii_types:
+#   - credit_card
+#   - ssn
+#   - email
+#   - phone
+#   - api_key
+#   - pem_key
+#   - jwt_token
+#   - high_entropy_token
