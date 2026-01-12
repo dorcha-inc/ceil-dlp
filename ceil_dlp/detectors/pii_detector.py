@@ -61,7 +61,7 @@ class PIIDetector:
         # High-entropy detection runs after regex patterns
         if "high_entropy_token" in custom_types:
             # Get all already-detected positions to avoid duplicates
-            detected_positions = set()
+            detected_positions: set[int] = set()
             for matches_list in results.values():
                 for _text, start, end in matches_list:
                     detected_positions.update(range(start, end))

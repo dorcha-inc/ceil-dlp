@@ -3,21 +3,41 @@
 # Or: pip install pre-commit && pre-commit install
 
 repos:
-  - repo: https://github.com/psf/black
-    rev: 23.12.1
+  - repo: local
     hooks:
-      - id: black
-        language_version: python3.8
+      - id: format-check
+        name: check code formatting
+        entry: make format-check
+        language: system
+        pass_filenames: false
+        always_run: true
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.8
-    hooks:
-      - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
+      - id: lint
+        name: run linter
+        entry: make lint
+        language: system
+        pass_filenames: false
+        always_run: true
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.8.0
-    hooks:
-      - id: mypy
-        additional_dependencies: [types-PyYAML]
-        args: [--ignore-missing-imports]
+      - id: typecheck
+        name: run type checker
+        entry: make typecheck
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: build
+        name: build package
+        entry: make build
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
+      - id: test
+        name: run tests
+        entry: make test
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

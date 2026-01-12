@@ -7,8 +7,8 @@ on:
     branches: [main, master]
 
 jobs:
-  test:
-    name: test (python ${{ matrix.python-version }})
+  ci:
+    name: ci (python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -32,6 +32,22 @@ jobs:
       - name: install dependencies
         run: make install-dev
 
+      - name: check code formatting
+        run: make format-check
+        if: matrix.python-version == '3.12'
+
+      - name: run linter
+        run: make lint
+        if: matrix.python-version == '3.12'
+
+      - name: run type checker
+        run: make typecheck
+        if: matrix.python-version == '3.12'
+
+      - name: build package
+        run: make build
+        if: matrix.python-version == '3.12'
+
       - name: run tests
         run: make test
 
@@ -45,50 +61,4 @@ jobs:
           file: ./coverage.xml
           fail_ci_if_error: false
         continue-on-error: true
-
-  lint:
-    name: lint and type check
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: checkout code
-        uses: actions/checkout@v4
-
-      - name: install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          version: "latest"
-
-      - name: setup python
-        run: uv python install
-
-      - name: install dependencies
-        run: make install-dev
-
-      - name: check code formatting
-        run: make format-check
-
-      - name: run linter
-        run: make lint
-
-      - name: run type checker
-        run: make typecheck
-
-  build:
-    name: build package
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: checkout code
-        uses: actions/checkout@v4
-
-      - name: install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          version: "latest"
-
-      - name: setup python
-        run: uv python install
-
-      - name: build package
-        run: make build
+        if: matrix.python-version == '3.12'
