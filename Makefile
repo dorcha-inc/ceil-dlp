@@ -5,12 +5,12 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install the package in production mode
-	uv pip install -e .
+	uv sync
 
 install-dev: ## Install the package with dev dependencies
-	uv pip install -e ".[dev]"
+	uv sync --all-extras
 	uv pip install pre-commit
-	pre-commit install
+	pre-commit install || true
 	$(MAKE) download-spacy-model
 
 sync: ## Sync dependencies from pyproject.toml
