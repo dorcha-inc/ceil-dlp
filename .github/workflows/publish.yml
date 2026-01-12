@@ -1,0 +1,39 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - "v*" # Triggers on tags like v1.0.0, v1.0.1, etc.
+
+jobs:
+  publish:
+    name: build and publish to pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v4
+
+      - name: install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: setup python
+        run: uv python install
+
+      - name: build package
+        run: uv build
+
+      - name: publish to pypi
+        run: uv publish
+
+      - name: upload distribution artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
