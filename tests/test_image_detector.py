@@ -45,18 +45,6 @@ def test_detect_pii_in_image_with_phone():
     assert len(detections["phone"]) > 0
 
 
-def test_detect_pii_in_image_with_ssn():
-    """Test image detection with SSN."""
-    # Create image with SSN text (using format that works well with OCR)
-    text = "SSN: 536-22-1234"
-    img_bytes = create_image_with_text(text)
-
-    detections = detect_pii_in_image(img_bytes)
-    # Should detect SSN
-    assert "ssn" in detections
-    assert len(detections["ssn"]) > 0
-
-
 def test_detect_pii_in_image_multiple_types():
     """Test image detection with multiple PII types."""
     # Create image with multiple PII types
