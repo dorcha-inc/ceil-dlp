@@ -26,6 +26,9 @@ jobs:
       - name: setup python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      - name: install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
+
       - name: install dependencies
         run: make install-dev
 
