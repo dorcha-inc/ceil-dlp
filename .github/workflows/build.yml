@@ -3,8 +3,24 @@ name: build
 on:
   push:
     branches: [main, master]
+    paths:
+      - "ceil_dlp/**"
+      - "tests/**"
+      - ".github/workflows/**"
+      - "pyproject.toml"
+      - "Makefile"
+      - "MANIFEST.in"
+      - "uv.lock"
   pull_request:
     branches: [main, master]
+    paths:
+      - "ceil_dlp/**"
+      - "tests/**"
+      - ".github/workflows/**"
+      - "pyproject.toml"
+      - "Makefile"
+      - "MANIFEST.in"
+      - "uv.lock"
 
 jobs:
   ci:
@@ -12,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - name: checkout code
@@ -59,6 +75,7 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
         continue-on-error: true
         if: matrix.python-version == '3.12'
