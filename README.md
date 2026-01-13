@@ -23,21 +23,23 @@ The setup is as simple as installing:
 uv pip install ceil-dlp
 ```
 
-and enabling in LiteLLM:
+and enabling in LiteLLM by adding to your `config.yaml`:
 
-```python
-from litellm import proxy
-from ceil_dlp import setup_litellm
-
-litellm_config = setup_litellm()
-proxy(host="0.0.0.0", port=4000, **litellm_config)
+```yaml
+litellm_settings:
+  callbacks: ceil_dlp.ceil_dlp_callback.proxy_handler_instance
 ```
+
+Then run: `litellm --config config.yaml --port 4000`
+
+To customize behavior, create a `ceil-dlp.yaml` file and set the `CEIL_DLP_CONFIG_PATH` environment variable. See [QUICKSTART.md](QUICKSTART.md) for detailed configuration options.
 
 And you're done!
 
 ## Documentation
 
 - See the [Quick Start Guide](QUICKSTART.md) for installation and basic usage
+- For a user-friendly end to end example, see the [Local Setup Guide](docs/ollama_guide.md)
 - Take a look at the [example configuration file](config.example.yaml)
 
 ## Developing

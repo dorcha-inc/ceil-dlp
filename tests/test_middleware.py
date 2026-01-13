@@ -1,6 +1,5 @@
 """Tests for middleware/LiteLLM integration."""
 
-from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -72,134 +71,168 @@ def test_middleware_extract_text_empty():
     assert text == ""
 
 
-def test_middleware_pre_call_hook_no_pii():
+@pytest.mark.asyncio
+async def test_middleware_pre_call_hook_no_pii():
     """Test pre-call hook with no PII detected."""
     handler = CeilDLPHandler()
     messages = [{"role": "user", "content": "Hello world"}]
-    kwargs = {"litellm_call_id": "test123"}
+    data = {
+        "model": "gpt-4",
+        "messages": messages,
+        "litellm_call_id": "test123",
+    }
 
-    error, modified_kwargs = handler._pre_call_hook(
-        user_id="user1", _model="gpt-4", messages=messages, kwargs=kwargs
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
     )
-    assert error is None
-    assert modified_kwargs == kwargs
+    assert result == data
 
 
-def test_middleware_pre_call_hook_blocked_pii():
+@pytest.mark.asyncio
+async def test_middleware_pre_call_hook_blocked_pii():
     """Test pre-call hook blocking high-risk PII."""
     handler = CeilDLPHandler()
     messages = [{"role": "user", "content": "My credit card is 4111111111111111"}]
-    kwargs = {"litellm_call_id": "test123"}
+    data = {
+        "model": "gpt-4",
+        "messages": messages,
+        "litellm_call_id": "test123",
+    }
 
-    error, modified_kwargs = handler._pre_call_hook(
-        user_id="user1", _model="gpt-4", messages=messages, kwargs=kwargs
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
     )
-    assert error is not None
-    assert "blocked" in error.lower()
-    assert modified_kwargs is None
+    assert isinstance(result, str)
+    assert "blocked" in result.lower()
 
 
-def test_middleware_pre_call_hook_masked_pii():
+@pytest.mark.asyncio
+async def test_middleware_pre_call_hook_masked_pii():
     """Test pre-call hook masking medium-risk PII."""
     handler = CeilDLPHandler()
     messages = [{"role": "user", "content": "My email is john@example.com"}]
-    kwargs = {"messages": messages, "litellm_call_id": "test123"}
+    data = {
+        "model": "gpt-4",
+        "messages": messages,
+        "litellm_call_id": "test123",
+    }
 
-    error, modified_kwargs = handler._pre_call_hook(
-        user_id="user1", _model="gpt-4", messages=messages, kwargs=kwargs
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
     )
-    assert error is None
-    assert modified_kwargs is not None
+    assert isinstance(result, dict)
     # Check that messages were modified
-    assert "[REDACTED_EMAIL]" in str(modified_kwargs.get("messages", []))
+    assert "[REDACTED_EMAIL]" in str(result.get("messages", []))
 
 
 @pytest.mark.asyncio
 async def test_middleware_async_pre_call_hook():
-    """Test async pre-call hook wrapper."""
+    """Test async pre-call hook."""
     handler = CeilDLPHandler()
     messages = [{"role": "user", "content": "Hello"}]
-    kwargs: dict[str, Any] = {}
+    data = {"model": "gpt-4", "messages": messages}
 
-    # Test that it calls the sync method
-    error, modified_kwargs = await handler.async_pre_call_hook(
-        user_id="user1", _model="gpt-4", messages=messages, kwargs=kwargs
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
     )
-    # Should return None error and same kwargs for normal text
-    assert error is None
-    assert modified_kwargs == kwargs
+    # Should return data for normal text
+    assert isinstance(result, dict)
+    assert result == data
 
 
-def test_middleware_pre_call_hook_empty_text():
+@pytest.mark.asyncio
+async def test_middleware_pre_call_hook_empty_text():
     """Test pre-call hook with empty text content."""
     handler = CeilDLPHandler()
     messages = [{"role": "user", "content": None}]
-    kwargs = {"litellm_call_id": "test123"}
+    data = {"model": "gpt-4", "messages": messages, "litellm_call_id": "test123"}
 
-    error, modified_kwargs = handler._pre_call_hook(
-        user_id="user1", _model="gpt-4", messages=messages, kwargs=kwargs
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
     )
-    assert error is None
-    assert modified_kwargs == kwargs
+    assert result == data
 
 
-def test_middleware_pre_call_hook_disabled_policy():
+@pytest.mark.asyncio
+async def test_middleware_pre_call_hook_disabled_policy():
     """Test pre-call hook with disabled policy."""
     config = Config()
     config.policies["email"].enabled = False
     handler = CeilDLPHandler(config=config)
     messages = [{"role": "user", "content": "My email is john@example.com"}]
-    kwargs = {"litellm_call_id": "test123"}
+    data = {"model": "gpt-4", "messages": messages, "litellm_call_id": "test123"}
 
-    error, modified_kwargs = handler._pre_call_hook(
-        user_id="user1", _model="gpt-4", messages=messages, kwargs=kwargs
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
     )
     # Should not block or mask since policy is disabled
-    assert error is None
-    assert modified_kwargs == kwargs
+    assert result == data
 
 
-def test_middleware_pre_call_hook_no_policy():
+@pytest.mark.asyncio
+async def test_middleware_pre_call_hook_no_policy():
     """Test pre-call hook with PII type that has no policy."""
     handler = CeilDLPHandler()
     # Use a detector that finds something not in default policies
     messages = [{"role": "user", "content": "test"}]
-    kwargs = {"litellm_call_id": "test123"}
+    data = {"model": "gpt-4", "messages": messages, "litellm_call_id": "test123"}
 
-    error, modified_kwargs = handler._pre_call_hook(
-        user_id="user1", _model="gpt-4", messages=messages, kwargs=kwargs
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
     )
-    assert error is None
+    assert result == data
 
 
 @pytest.mark.asyncio
 async def test_middleware_async_pre_call_hook_exception():
     """Test async pre-call hook exception handling."""
-
     handler = CeilDLPHandler()
     messages = [{"role": "user", "content": "Hello"}]
-    kwargs: dict[str, Any] = {}
+    data = {"model": "gpt-4", "messages": messages}
 
-    # Mock _pre_call_hook to raise an exception
-    with patch.object(handler, "_pre_call_hook", side_effect=Exception("Test error")):
-        error, modified_kwargs = await handler.async_pre_call_hook(
-            user_id="user1", _model="gpt-4", messages=messages, kwargs=kwargs
+    # Mock _process_pii_detection to raise an exception
+    with patch.object(handler, "_process_pii_detection", side_effect=Exception("Test error")):
+        result = await handler.async_pre_call_hook(
+            user_api_key_dict=None,
+            cache=None,
+            data=data,
+            call_type="completion",
         )
-        # Should return None error and original kwargs on exception
-        assert error is None
-        assert modified_kwargs == kwargs
+        # Should return original data on exception (fail-safe)
+        assert result == data
 
 
 @pytest.mark.asyncio
 async def test_middleware_async_post_call_success_hook():
     """Test async post-call success hook."""
     handler = CeilDLPHandler()
+    data = {"model": "gpt-4", "messages": [{"role": "user", "content": "Hello"}]}
+    response = {"content": "Hi"}
     result = await handler.async_post_call_success_hook(
-        user_id="user1",
-        model="gpt-4",
-        messages=[{"role": "user", "content": "Hello"}],
-        kwargs={},
-        response={"content": "Hi"},
+        data=data,
+        user_api_key_dict=None,
+        response=response,
     )
     # Should return None (no-op)
     assert result is None
@@ -321,70 +354,83 @@ def test_middleware_extract_text_string_message_empty():
     assert text == ""
 
 
-def test_middleware_mode_observe():
+@pytest.mark.asyncio
+async def test_middleware_mode_observe():
     """Test observe mode: log but never block or mask."""
     config = Config(mode="observe")
     handler = CeilDLPHandler(config=config)
     messages = [{"role": "user", "content": "My credit card is 4111111111111111"}]
-    kwargs = {"litellm_call_id": "test123"}
+    data = {"model": "gpt-4", "messages": messages, "litellm_call_id": "test123"}
 
-    error, modified_kwargs = handler._pre_call_hook(
-        user_id="user1", _model="gpt-4", messages=messages, kwargs=kwargs
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
     )
     # Should not block in observe mode
-    assert error is None
-    assert modified_kwargs == kwargs
+    assert result == data
 
 
-def test_middleware_mode_warn():
+@pytest.mark.asyncio
+async def test_middleware_mode_warn():
     """Test warn mode: mask but never block, add warning header."""
     config = Config(mode="warn")
     handler = CeilDLPHandler(config=config)
     messages = [{"role": "user", "content": "My email is john@example.com"}]
-    kwargs = {"litellm_call_id": "test123"}
+    data = {"model": "gpt-4", "messages": messages, "litellm_call_id": "test123"}
 
-    error, modified_kwargs = handler._pre_call_hook(
-        user_id="user1", _model="gpt-4", messages=messages, kwargs=kwargs
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
     )
     # Should not block in warn mode
-    assert error is None
-    assert modified_kwargs is not None
+    assert isinstance(result, dict)
     # Should have warning header
-    assert "extra_headers" in modified_kwargs
-    assert modified_kwargs["extra_headers"]["X-Ceil-DLP-Warning"] == "violations_detected"
+    assert "extra_headers" in result
+    assert result["extra_headers"]["X-Ceil-DLP-Warning"] == "violations_detected"
 
 
-def test_middleware_mode_warn_blocked_type():
+@pytest.mark.asyncio
+async def test_middleware_mode_warn_blocked_type():
     """Test warn mode with blocked type: log warning but don't block."""
     config = Config(mode="warn")
     handler = CeilDLPHandler(config=config)
     messages = [{"role": "user", "content": "My credit card is 4111111111111111"}]
-    kwargs = {"litellm_call_id": "test123"}
+    data = {"model": "gpt-4", "messages": messages, "litellm_call_id": "test123"}
 
-    error, modified_kwargs = handler._pre_call_hook(
-        user_id="user1", _model="gpt-4", messages=messages, kwargs=kwargs
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
     )
     # Should not block even for blocked types in warn mode
-    assert error is None
-    assert modified_kwargs == kwargs
+    assert isinstance(result, dict)
     # Should have warning header
-    assert "extra_headers" in modified_kwargs
-    assert modified_kwargs["extra_headers"]["X-Ceil-DLP-Warning"] == "violations_detected"
+    assert "extra_headers" in result
+    assert result["extra_headers"]["X-Ceil-DLP-Warning"] == "violations_detected"
 
 
-def test_middleware_mode_enforce():
+@pytest.mark.asyncio
+async def test_middleware_mode_enforce():
     """Test enforce mode: block and mask according to policies."""
     config = Config(mode="enforce")
     handler = CeilDLPHandler(config=config)
     messages = [{"role": "user", "content": "My credit card is 4111111111111111"}]
-    kwargs = {"litellm_call_id": "test123"}
+    data = {"model": "gpt-4", "messages": messages, "litellm_call_id": "test123"}
 
-    error, modified_kwargs = handler._pre_call_hook(
-        user_id="user1", _model="gpt-4", messages=messages, kwargs=kwargs
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
     )
     # Should block in enforce mode
-    assert error is not None
-    assert "blocked" in error.lower()
+    assert isinstance(result, str)
+    assert "blocked" in result.lower()
 
 
 def test_middleware_mode_config_from_yaml(tmp_path):
@@ -416,7 +462,8 @@ def test_middleware_mode_config_env_var(monkeypatch):
     assert config.mode == "observe"
 
 
-def test_middleware_model_aware_policy_allow_list():
+@pytest.mark.asyncio
+async def test_middleware_model_aware_policy_allow_list():
     """Test model-aware policy with allow list - model in list should skip policy."""
     from ceil_dlp.config import ModelRules, Policy
 
@@ -432,11 +479,18 @@ def test_middleware_model_aware_policy_allow_list():
     messages = [{"role": "user", "content": "My email is john@example.com"}]
 
     # Model in allow list - should skip policy (allow request)
-    error, _ = handler._pre_call_hook("user1", "openai/gpt-4", messages, {})
-    assert error is None  # Request should be allowed
+    data = {"model": "openai/gpt-4", "messages": messages}
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
+    )
+    assert isinstance(result, dict)  # Request should be allowed
 
 
-def test_middleware_model_aware_policy_allow_list_no_match():
+@pytest.mark.asyncio
+async def test_middleware_model_aware_policy_allow_list_no_match():
     """Test model-aware policy with allow list - model not in list should apply policy."""
     from ceil_dlp.config import ModelRules, Policy
 
@@ -451,12 +505,19 @@ def test_middleware_model_aware_policy_allow_list_no_match():
     messages = [{"role": "user", "content": "My email is john@example.com"}]
 
     # Model not in allow list - should apply policy (block request)
-    error, _ = handler._pre_call_hook("user1", "openai/gpt-4", messages, {})
-    assert error is not None  # Request should be blocked
-    assert "email" in error.lower()
+    data = {"model": "openai/gpt-4", "messages": messages}
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
+    )
+    assert isinstance(result, str)  # Request should be blocked
+    assert "email" in result.lower()
 
 
-def test_middleware_model_aware_policy_block_list():
+@pytest.mark.asyncio
+async def test_middleware_model_aware_policy_block_list():
     """Test model-aware policy with block list - model in list should apply policy."""
     from ceil_dlp.config import ModelRules, Policy
 
@@ -471,11 +532,18 @@ def test_middleware_model_aware_policy_block_list():
     messages = [{"role": "user", "content": "My email is john@example.com"}]
 
     # Model in block list - should apply policy (block request)
-    error, _ = handler._pre_call_hook("user1", "openai/gpt-4", messages, {})
-    assert error is not None  # Request should be blocked
+    data = {"model": "openai/gpt-4", "messages": messages}
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
+    )
+    assert isinstance(result, str)  # Request should be blocked
 
 
-def test_middleware_model_aware_policy_block_list_no_match():
+@pytest.mark.asyncio
+async def test_middleware_model_aware_policy_block_list_no_match():
     """Test model-aware policy with block list - model not in list should skip policy."""
     from ceil_dlp.config import ModelRules, Policy
 
@@ -490,11 +558,18 @@ def test_middleware_model_aware_policy_block_list_no_match():
     messages = [{"role": "user", "content": "My email is john@example.com"}]
 
     # Model not in block list - should skip policy (allow request)
-    error, _ = handler._pre_call_hook("user1", "self-hosted/llama2", messages, {})
-    assert error is None  # Request should be allowed
+    data = {"model": "self-hosted/llama2", "messages": messages}
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
+    )
+    assert isinstance(result, dict)  # Request should be allowed
 
 
-def test_middleware_model_aware_policy_both_lists():
+@pytest.mark.asyncio
+async def test_middleware_model_aware_policy_both_lists():
     """Test model-aware policy with both allow and block lists - block takes precedence."""
     from ceil_dlp.config import ModelRules, Policy
 
@@ -509,11 +584,18 @@ def test_middleware_model_aware_policy_both_lists():
     messages = [{"role": "user", "content": "My email is john@example.com"}]
 
     # Model in both lists - block should take precedence
-    error, _ = handler._pre_call_hook("user1", "openai/gpt-4", messages, {})
-    assert error is not None  # Request should be blocked (block takes precedence)
+    data = {"model": "openai/gpt-4", "messages": messages}
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
+    )
+    assert isinstance(result, str)  # Request should be blocked (block takes precedence)
 
 
-def test_middleware_model_aware_policy_no_models_field():
+@pytest.mark.asyncio
+async def test_middleware_model_aware_policy_no_models_field():
     """Test policy without models field - should apply to all models (backward compatible)."""
     config = Config()
     # Default policy has no models field
@@ -521,11 +603,18 @@ def test_middleware_model_aware_policy_no_models_field():
     messages = [{"role": "user", "content": "My credit card is 4111111111111111"}]
 
     # Should block regardless of model (backward compatible behavior)
-    error, _ = handler._pre_call_hook("user1", "openai/gpt-4", messages, {})
-    assert error is not None  # Request should be blocked
+    data = {"model": "openai/gpt-4", "messages": messages}
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data,
+        call_type="completion",
+    )
+    assert isinstance(result, str)  # Request should be blocked
 
 
-def test_middleware_model_aware_policy_regex_pattern():
+@pytest.mark.asyncio
+async def test_middleware_model_aware_policy_regex_pattern():
     """Test model-aware policy with regex pattern matching."""
     from ceil_dlp.config import ModelRules, Policy
 
@@ -540,17 +629,36 @@ def test_middleware_model_aware_policy_regex_pattern():
     messages = [{"role": "user", "content": "My email is john@example.com"}]
 
     # Test regex pattern matching
-    error1, _ = handler._pre_call_hook("user1", "self-hosted/llama2", messages, {})
-    assert error1 is None  # Should allow (matches self-hosted/.*)
+    data1 = {"model": "self-hosted/llama2", "messages": messages}
+    result1 = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data1,
+        call_type="completion",
+    )
+    assert isinstance(result1, dict)  # Should allow (matches self-hosted/.*)
 
-    error2, _ = handler._pre_call_hook("user1", "local/ollama", messages, {})
-    assert error2 is None  # Should allow (matches local/.*)
+    data2 = {"model": "local/ollama", "messages": messages}
+    result2 = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data2,
+        call_type="completion",
+    )
+    assert isinstance(result2, dict)  # Should allow (matches local/.*)
 
-    error3, _ = handler._pre_call_hook("user1", "openai/gpt-4", messages, {})
-    assert error3 is not None  # Should block (doesn't match allow patterns)
+    data3 = {"model": "openai/gpt-4", "messages": messages}
+    result3 = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data3,
+        call_type="completion",
+    )
+    assert isinstance(result3, str)  # Should block (doesn't match allow patterns)
 
 
-def test_middleware_model_aware_policy_exact_match():
+@pytest.mark.asyncio
+async def test_middleware_model_aware_policy_exact_match():
     """Test model-aware policy with exact match (no regex)."""
     from ceil_dlp.config import ModelRules, Policy
 
@@ -565,9 +673,339 @@ def test_middleware_model_aware_policy_exact_match():
     messages = [{"role": "user", "content": "My email is john@example.com"}]
 
     # Exact match
-    error1, _ = handler._pre_call_hook("user1", "openai/gpt-4", messages, {})
-    assert error1 is None  # Should allow (exact match)
+    data1 = {"model": "openai/gpt-4", "messages": messages}
+    result1 = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data1,
+        call_type="completion",
+    )
+    assert isinstance(result1, dict)  # Should allow (exact match)
 
     # Similar but not exact
-    error2, _ = handler._pre_call_hook("user1", "openai/gpt-3.5", messages, {})
-    assert error2 is not None  # Should block (not exact match)
+    data2 = {"model": "openai/gpt-3.5", "messages": messages}
+    result2 = await handler.async_pre_call_hook(
+        user_api_key_dict=None,
+        cache=None,
+        data=data2,
+        call_type="completion",
+    )
+    assert isinstance(result2, str)  # Should block (not exact match)
+
+
+@pytest.mark.asyncio
+async def test_middleware_image_redaction_in_messages():
+    """Test image redaction in messages."""
+    import base64
+
+    from ceil_dlp.utils import create_image_with_text
+
+    handler = CeilDLPHandler()
+    # Create an image with PII
+    image_text = "Contact: john@example.com"
+    image_bytes = create_image_with_text(image_text)
+
+    # Create messages with base64-encoded image
+    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What's in this image?"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{image_base64}"},
+                },
+            ],
+        }
+    ]
+
+    # Mock image detection to return email PII
+    with (
+        patch.object(handler.detector, "detect", return_value={}),
+        patch(
+            "ceil_dlp.middleware.detect_pii_in_image",
+            return_value={"email": [("[email_detected_in_image]", 0, 1)]},
+        ),
+    ):
+        # Create images_with_pii list
+        images_with_pii = [(image_bytes, {"email": [("[email_detected_in_image]", 0, 1)]})]
+        pii_types_to_mask = {"email"}
+
+        # Mock redact_image to return modified bytes
+        redacted_bytes = b"redacted_image_data"
+        with patch("ceil_dlp.middleware.redact_image", return_value=redacted_bytes):
+            modified = handler._redact_images_in_messages(
+                messages, images_with_pii, pii_types_to_mask
+            )
+
+            # Check that image was replaced
+            assert modified != messages
+            image_item = modified[0]["content"][1]
+            assert image_item["type"] == "image_url"
+            # Image URL should contain redacted base64
+            redacted_base64 = base64.b64encode(redacted_bytes).decode("utf-8")
+            assert redacted_base64 in image_item["image_url"]["url"]
+
+
+@pytest.mark.asyncio
+async def test_middleware_image_redaction_no_pii_to_mask():
+    """Test image redaction when no PII types need masking."""
+    handler = CeilDLPHandler()
+    messages = [{"role": "user", "content": "Hello"}]
+    images_with_pii: list[tuple[bytes, dict[str, list[tuple[str, int, int]]]]] = []
+    pii_types_to_mask: set[str] = set()
+
+    modified = handler._redact_images_in_messages(messages, images_with_pii, pii_types_to_mask)
+    assert modified == messages
+
+
+@pytest.mark.asyncio
+async def test_middleware_image_redaction_different_pii_types():
+    """Test image redaction when image has PII but different types than what needs masking."""
+    import base64
+
+    from ceil_dlp.utils import create_image_with_text
+
+    handler = CeilDLPHandler()
+    image_bytes = create_image_with_text("Contact: john@example.com")
+    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{image_base64}"},
+                }
+            ],
+        }
+    ]
+
+    # Image has email, but we only want to mask phone
+    images_with_pii = [(image_bytes, {"email": [("[email_detected_in_image]", 0, 1)]})]
+    pii_types_to_mask = {"phone"}
+
+    modified = handler._redact_images_in_messages(messages, images_with_pii, pii_types_to_mask)
+    # Image should not be redacted since email is not in pii_types_to_mask
+    assert modified == messages
+
+
+@pytest.mark.asyncio
+async def test_middleware_image_redaction_image_type_format():
+    """Test image redaction with 'image' type (direct image data)."""
+    import base64
+
+    from ceil_dlp.utils import create_image_with_text
+
+    handler = CeilDLPHandler()
+    image_bytes = create_image_with_text("Contact: john@example.com")
+    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [{"type": "image", "image": f"data:image/png;base64,{image_base64}"}],
+        }
+    ]
+
+    images_with_pii = [(image_bytes, {"email": [("[email_detected_in_image]", 0, 1)]})]
+    pii_types_to_mask = {"email"}
+
+    redacted_bytes = b"redacted_image_data"
+    with patch("ceil_dlp.middleware.redact_image", return_value=redacted_bytes):
+        modified = handler._redact_images_in_messages(messages, images_with_pii, pii_types_to_mask)
+
+        # Check that image was replaced
+        image_item = modified[0]["content"][0]
+        assert image_item["type"] == "image"
+        redacted_base64 = base64.b64encode(redacted_bytes).decode("utf-8")
+        assert redacted_base64 in image_item["image"]
+
+
+@pytest.mark.asyncio
+async def test_middleware_image_redaction_bytes_format():
+    """Test image redaction with bytes image data."""
+    from ceil_dlp.utils import create_image_with_text
+
+    handler = CeilDLPHandler()
+    image_bytes = create_image_with_text("Contact: john@example.com")
+
+    messages = [{"role": "user", "content": [{"type": "image", "image": image_bytes}]}]
+
+    images_with_pii = [(image_bytes, {"email": [("[email_detected_in_image]", 0, 1)]})]
+    pii_types_to_mask = {"email"}
+
+    redacted_bytes = b"redacted_image_data"
+    with patch("ceil_dlp.middleware.redact_image", return_value=redacted_bytes):
+        modified = handler._redact_images_in_messages(messages, images_with_pii, pii_types_to_mask)
+
+        # Check that image was replaced with base64 data URL
+        image_item = modified[0]["content"][0]
+        assert image_item["type"] == "image"
+        assert isinstance(image_item["image"], str)
+        assert "data:image/png;base64," in image_item["image"]
+
+
+@pytest.mark.asyncio
+async def test_middleware_image_redaction_error_handling():
+    """Test image redaction error handling."""
+    import base64
+
+    from ceil_dlp.utils import create_image_with_text
+
+    handler = CeilDLPHandler()
+    image_bytes = create_image_with_text("Contact: john@example.com")
+    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{image_base64}"},
+                }
+            ],
+        }
+    ]
+
+    images_with_pii = [(image_bytes, {"email": [("[email_detected_in_image]", 0, 1)]})]
+    pii_types_to_mask = {"email"}
+
+    # Mock redact_image to raise an error
+    with patch("ceil_dlp.middleware.redact_image", side_effect=Exception("Redaction failed")):
+        # Should not crash, should return original messages
+        modified = handler._redact_images_in_messages(messages, images_with_pii, pii_types_to_mask)
+        # Original messages should be preserved on error
+        assert len(modified) == len(messages)
+
+
+@pytest.mark.asyncio
+async def test_middleware_image_redaction_invalid_base64():
+    """Test image redaction with invalid base64 data."""
+    handler = CeilDLPHandler()
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/png;base64,invalid_base64!!!"},
+                }
+            ],
+        }
+    ]
+
+    images_with_pii: list[tuple[bytes, dict[str, list[tuple[str, int, int]]]]] = []
+    pii_types_to_mask: set[str] = set()
+
+    # Should handle invalid base64 gracefully
+    modified = handler._redact_images_in_messages(messages, images_with_pii, pii_types_to_mask)
+    assert modified == messages
+
+
+@pytest.mark.asyncio
+async def test_middleware_pre_call_hook_with_image_pii():
+    """Test pre_call_hook with image containing PII."""
+    import base64
+
+    from ceil_dlp.utils import create_image_with_text
+
+    handler = CeilDLPHandler()
+    # Create image with email
+    image_bytes = create_image_with_text("Contact: john@example.com")
+    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What's in this image?"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{image_base64}"},
+                },
+            ],
+        }
+    ]
+
+    data = {
+        "model": "gpt-4",
+        "messages": messages,
+        "litellm_call_id": "test123",
+    }
+
+    # Mock image detection
+    with patch(
+        "ceil_dlp.middleware.detect_pii_in_image",
+        return_value={"email": [("[email_detected_in_image]", 0, 1)]},
+    ):
+        # Mock redact_image to return modified bytes
+        redacted_bytes = b"redacted"
+        with patch("ceil_dlp.middleware.redact_image", return_value=redacted_bytes):
+            result = await handler.async_pre_call_hook(
+                user_api_key_dict=None,
+                cache=None,
+                data=data,
+                call_type="completion",
+            )
+
+            # Should mask email (default policy is mask for email)
+            assert isinstance(result, dict)
+            # Image should be redacted in the result
+            result_messages = result.get("messages", [])
+            assert len(result_messages) > 0
+            # Check that image URL was modified (contains redacted base64)
+            image_item = result_messages[0]["content"][1]
+            redacted_base64 = base64.b64encode(redacted_bytes).decode("utf-8")
+            assert redacted_base64 in image_item["image_url"]["url"]
+
+
+@pytest.mark.asyncio
+async def test_middleware_pre_call_hook_image_blocked():
+    """Test pre_call_hook blocking request when image contains blocked PII."""
+    import base64
+
+    from ceil_dlp.config import Config
+    from ceil_dlp.utils import create_image_with_text
+
+    # Configure to block credit cards
+    config = Config()
+    config.policies["credit_card"].action = "block"
+    handler = CeilDLPHandler(config=config)
+
+    image_bytes = create_image_with_text("Card: 4111111111111111")
+    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{image_base64}"},
+                }
+            ],
+        }
+    ]
+
+    data = {"model": "gpt-4", "messages": messages, "litellm_call_id": "test123"}
+
+    # Mock image detection to find credit card
+    with patch(
+        "ceil_dlp.middleware.detect_pii_in_image",
+        return_value={"credit_card": [("[credit_card_detected_in_image]", 0, 1)]},
+    ):
+        result = await handler.async_pre_call_hook(
+            user_api_key_dict=None,
+            cache=None,
+            data=data,
+            call_type="completion",
+        )
+
+        # Should block the request
+        assert isinstance(result, str)
+        assert "blocked" in result.lower()
+        assert "credit_card" in result.lower()

@@ -10,56 +10,29 @@ uv pip install ceil-dlp
 
 ### Enable in LiteLLM
 
-#### Option A: Using Python
-
-```python
-from litellm import proxy
-from ceil_dlp import setup_litellm
-
-# Just enable with defaults (enforce mode)
-litellm_config = setup_litellm()
-
-# Start proxy with ceil-dlp enabled
-proxy(
-    host="0.0.0.0",
-    port=4000,
-    **litellm_config
-)
-```
-
-You can also change the mode. Supported modes are `observe`, `warn`, and `enforce`. `observe` logs all 
-detections but never blocks or masks. This is great for dev and staging environments. `warn` applies 
-masking and logs, but never blocks. It also adds a warning header. Finally, `enforce` blocks and masks
-according to policies.
-
-```python
-litellm_config = setup_litellm(mode="observe")
-```
-
-#### Option B: Using YAML Config
-
 Add to your LiteLLM `config.yaml`:
 
 ```yaml
-general_settings:
-  custom_callback: ceil_dlp.CeilDLPHandler
+model_list:
+  - model_name: gpt-3.5-turbo
+    litellm_params:
+      model: gpt-3.5-turbo
+
+litellm_settings:
+  callbacks: ceil_dlp.ceil_dlp_callback.proxy_handler_instance
 ```
 
-#### Setting mode via environment variable
-
-Note that the mode can also be set using an environment variable if left unset in Python.
+This uses the default configuration (enforce mode). Then run LiteLLM:
 
 ```bash
-export CEIL_DLP_MODE=observe
+litellm --config config.yaml --port 4000
 ```
 
 That's it! ceil-dlp is now protecting all LLM requests.
 
 ### Configuration Files
 
-To customize behavior, create a configuration file.
-
-Create `ceil-dlp.yaml`:
+To customize behavior, create a separate `ceil-dlp.yaml` configuration file:
 
 ```yaml
 # Operational mode: observe | warn | enforce
@@ -77,45 +50,32 @@ policies:
 audit_log_path: /var/log/ceil-dlp/audit.log
 ```
 
-Then use it in LiteLLM:
+Then set the `CEIL_DLP_CONFIG_PATH` environment variable to point to your config file:
 
-Python:
-
-```python
-from litellm import proxy
-from ceil_dlp import setup_litellm
-
-litellm_config = setup_litellm(config_path="/path/to/ceil-dlp.yaml")
-proxy(host="0.0.0.0", port=4000, **litellm_config)
+```bash
+export CEIL_DLP_CONFIG_PATH=/path/to/ceil-dlp.yaml
+litellm --config config.yaml --port 4000
 ```
 
-Or YAML:
+Or set it inline:
 
-```yaml
-general_settings:
-  custom_callback: ceil_dlp.CeilDLPHandler
-  custom_callback_params:
-    config_path: /path/to/ceil-dlp.yaml
+```bash
+CEIL_DLP_CONFIG_PATH=/path/to/ceil-dlp.yaml litellm --config config.yaml --port 4000
 ```
 
 ### Testing
 
 Send a request with PII:
 
-```python
-from litellm import completion
-
-# This will be blocked if mode is "enforce"
-try:
-    response = completion(
-        model="ollama/qwen3:0.6b",
-        messages=[
-            {"role": "user", "content": "My credit card is 4111111111111111"}
-        ]
-    )
-except Exception as e:
-    print(f"Blocked: {e}")
-    # Output: Request blocked: Detected sensitive data (credit_card)
+```bash
+curl http://localhost:4000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3:0.6b",
+    "messages": [
+      {"role": "user", "content": "Please echo back the following: my email is john@example.com and my phone is 555-123-4567"}
+    ]
+  }'
 ```
 
 ### Checking Audit Logs
@@ -141,9 +101,7 @@ As mentioned earlier, you can choose how strict to be:
 3. `enforce`: Block and mask according to policies (default, secure-by-default)
 
 This can be set via:
-- Parameter: `setup_litellm(mode="observe")`
-- Environment: `export CEIL_DLP_MODE=observe`
-- Config file: `mode: observe` in `ceil-dlp.yaml`
+- YAML config: `mode: observe` in a separate `ceil-dlp.yaml` file (set via `CEIL_DLP_CONFIG_PATH` environment variable)
 
 ### What Gets Detected?
 
@@ -155,7 +113,7 @@ This can be set via:
 - JWT tokens
 - High-entropy tokens (secrets without known patterns)
 
-### Masked by Default (Medium-Risk)
+### Redacted by Default (Medium-Risk)
 - Email addresses
 - Phone numbers (US and international)
 
@@ -180,9 +138,20 @@ response = completion(
 ```
 
 Note: Image detection requires Tesseract OCR installed system-wide:
-- macOS: `brew install tesseract`
-- Linux: `apt-get install tesseract-ocr` or `yum install tesseract`
-- Windows: Download from [GitHub](https://github.com/UB-Mannheim/tesseract/wiki)
+
+On macOS: 
+
+```bash
+brew install tesseract
+```
+
+On Linux: 
+
+```bash
+apt-get install tesseract-ocr
+```
+
+On Windows: Download from [GitHub](https://github.com/UB-Mannheim/tesseract/wiki)
 
 ### Model-Aware Policies
 
@@ -195,7 +164,7 @@ policies:
     enabled: true
     models:
       allow:  # Only allow emails to self-hosted models
-        - "ollama/llama2"
+        - "ollama/qwen3:0.6b"
         - "local/.*"  # regex: any local model
         - "self-hosted/.*"  # regex: any self-hosted model
       block:  # Explicitly block from external models
