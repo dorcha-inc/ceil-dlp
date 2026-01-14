@@ -1,6 +1,12 @@
+<!-- Logo attribution: Based on "Express Train" by Charles Parsons (Currier and Ives), 1859. 
+     Original source: https://commons.wikimedia.org/wiki/File:Express_Train_MET_DT5428.jpg
+     Public domain (CC0) - available for use without restrictions. -->
+
 <div align="center">
+  <img src="share/ceil-dlp-logo-no-bg.png" alt="ceil-dlp logo" width="400">
+  
   <h1>ceil-dlp</h1>
-  <p>DLP plugin for LiteLLM for seamlessly managing PII in LLM interactions.</p>
+  <p>DLP plugin for LiteLLM that seamlessly manages PII in LLM interactions.</p>
 </div>
 
 <p align="center">
@@ -14,8 +20,6 @@
 `ceil-dlp` is a Data Loss Prevention (DLP) plugin for [LiteLLM](https://github.com/BerriAI/litellm) that automatically detects and protects Personally Identifiable Information (PII) in LLM requests. This includes PII in both text and images (pdf support is on the way). It blocks, masks, or logs sensitive data before it reaches your LLM provider. This helps prevent you from leaking your secrets, API keys, and other sensitive information. It also helps you ensure compliance with data privacy regulations like HIPAA, PCI-DSS, GDPR, and CCPA.
 
 ## Usage
-
-See [QUICKSTART.md](QUICKSTART.md) for detailed installation and usage instructions.
 
 The setup is as simple as installing:
 
@@ -42,9 +46,13 @@ And you're done!
 - For a user-friendly end to end example, see the [Local Setup Guide](docs/ollama_guide.md)
 - Take a look at the [example configuration file](config.example.yaml)
 
-## Developing
+## Contributing
 
-Contributions are always welcome!
+Contributions are always welcome! We'd love to have you contribute to ceil-dlp.
+
+- See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines
+- Read our [Code of Conduct](CODE_OF_CONDUCT.md) to understand our community standards
+- Check out [SECURITY.md](SECURITY.md) for security reporting guidelines
 
 ### Releasing a New Version
 

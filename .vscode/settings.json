@@ -48,5 +48,8 @@
         "**/.mypy_cache": true,
         "**/.ruff_cache": true,
         "**/node_modules": true
-    }
+    },
+    "cursorpyright.analysis.autoImportCompletions": true,
+    "cursorpyright.analysis.diagnosticMode": "workspace",
+    "cursorpyright.analysis.typeCheckingMode": "basic"
 }
