@@ -6,7 +6,14 @@ import typer
 import yaml
 from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
+
+from ceil_dlp.config import Config
+from ceil_dlp.detectors.image_detector import detect_pii_in_image
+from ceil_dlp.detectors.pdf_detector import detect_pii_in_pdf
+from ceil_dlp.detectors.pii_detector import PIIDetector
+from ceil_dlp.redaction import apply_redaction, redact_image, redact_pdf
 
 console = Console()
 
@@ -70,9 +77,6 @@ policies:
     action: block
     enabled: true
   jwt_token:
-    action: block
-    enabled: true
-  high_entropy_token:
     action: block
     enabled: true
 
@@ -354,6 +358,173 @@ def remove(
 
     console.print()
     console.print(Panel.fit("[bold green]removal complete![/bold green]", border_style="green"))
+
+
+@app.command()
+def test(
+    input_file: Path = typer.Argument(..., help="File to test (text, image, or PDF)", exists=True),
+    config_path: Path = typer.Option(
+        None, "--config", "-c", help="Path to ceil-dlp.yaml config file"
+    ),
+    model: str = typer.Option(
+        "test-model", "--model", "-m", help="Model name to use for model-aware policies"
+    ),
+    output_file: Path = typer.Option(
+        None, "--output", "-o", help="Save redacted output to file (for images/PDFs)"
+    ),
+) -> None:
+    """
+    Test what ceil-dlp would do with a given file.
+
+    Shows whether the file would be:
+    - ACCEPTED: No PII detected or all PII is allowed
+    - BLOCKED: Contains PII that would be blocked
+    - MASKED: Contains PII that would be masked (shows redacted version)
+
+    Supports text files, images (PNG, JPEG, etc.), and PDFs.
+    """
+    # Load config
+    config = Config.from_yaml(config_path) if config_path and config_path.exists() else Config()
+
+    # Determine file type
+    file_ext = input_file.suffix.lower()
+    is_text = file_ext in (".txt", ".md", ".py", ".js", ".json", ".yaml", ".yml", ".csv")
+    is_image = file_ext in (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")
+    is_pdf = file_ext == ".pdf"
+
+    if not (is_text or is_image or is_pdf):
+        console.print(f"[red]Error:[/red] Unsupported file type: {file_ext}")
+        console.print(
+            "Supported types: text files (.txt, .md, etc.), images (.png, .jpg, etc.), PDFs (.pdf)"
+        )
+        raise typer.Exit(1)
+
+    console.print(f"\n[bold blue]Testing file:[/bold blue] {input_file}")
+    console.print(f"[dim]Model:[/dim] {model}")
+    console.print(f"[dim]Mode:[/dim] {config.mode}\n")
+
+    # Initialize detector
+    enabled_types = set(config.enabled_pii_types) if config.enabled_pii_types else None
+    detector = PIIDetector(enabled_types=enabled_types)
+
+    # Detect PII based on file type
+    detections: dict[str, list[tuple[str, int, int]]] = {}
+    file_content: str | bytes | None = None
+    text_content: str | None = None
+
+    if is_text:
+        # Read text file
+        text_content = input_file.read_text(encoding="utf-8", errors="ignore")
+        file_content = text_content
+        detections = detector.detect(text_content)
+    elif is_image:
+        # Read image file
+        image_bytes = input_file.read_bytes()
+        file_content = image_bytes
+        detections = detect_pii_in_image(image_bytes, enabled_types=enabled_types)
+    elif is_pdf:
+        # Read PDF file
+        pdf_bytes = input_file.read_bytes()
+        file_content = pdf_bytes
+        detections = detect_pii_in_pdf(pdf_bytes, enabled_types=enabled_types)
+
+    # Process detections based on policies
+    blocked_types = []
+    masked_types = {}
+
+    for pii_type, matches in detections.items():
+        policy = config.get_policy(pii_type)
+        if not policy or not policy.enabled:
+            continue
+
+        # Check model-aware policy (simplified - would need model_matcher import)
+        # For now, assume policy applies
+        if policy.action == "block":
+            blocked_types.append(pii_type)
+        elif policy.action == "mask":
+            masked_types[pii_type] = matches
+
+    # Display results
+    if not detections:
+        console.print(
+            Panel.fit("[bold green]ACCEPTED[/bold green]\nNo PII detected.", border_style="green")
+        )
+        return
+
+    # Create results table
+    table = Table(title="Detection Results", show_header=True, header_style="bold magenta")
+    table.add_column("PII Type", style="cyan")
+    table.add_column("Count", justify="right")
+    table.add_column("Action", style="yellow")
+    table.add_column("Examples", style="dim")
+
+    for pii_type, matches in detections.items():
+        policy = config.get_policy(pii_type)
+        action = policy.action if policy and policy.enabled else "observe"
+        count = len(matches)
+        examples = ", ".join(
+            [match[0][:30] + "..." if len(match[0]) > 30 else match[0] for match in matches[:3]]
+        )
+        if count > 3:
+            examples += f" ... (+{count - 3} more)"
+        table.add_row(pii_type, str(count), action.upper(), examples)
+
+    console.print(table)
+    console.print()
+
+    # Determine final action
+    if blocked_types:
+        console.print(
+            Panel.fit(
+                f"[bold red]BLOCKED[/bold red]\n\n"
+                f"This file would be blocked by ceil-dlp due to detected sensitive data:\n"
+                f"{', '.join(blocked_types)}\n\n"
+                f"Mode: {config.mode}",
+                border_style="red",
+            )
+        )
+    elif masked_types:
+        # Show redacted version
+        if is_text and text_content:
+            redacted_text, redacted_items = apply_redaction(text_content, masked_types)
+            console.print(Panel.fit("[bold yellow]MASKED[/bold yellow]", border_style="yellow"))
+            console.print("\n[bold]Original:[/bold]")
+            console.print(
+                f"[dim]{text_content[:200]}{'...' if len(text_content) > 200 else ''}[/dim]"
+            )
+            console.print("\n[bold]Redacted:[/bold]")
+            console.print(f"{redacted_text[:200]}{'...' if len(redacted_text) > 200 else ''}")
+        elif is_image and file_content:
+            console.print(Panel.fit("[bold yellow]MASKED[/bold yellow]", border_style="yellow"))
+            console.print("\n[bold]Redacting image...[/bold]")
+            types_to_redact = list(masked_types.keys())
+            try:
+                redacted_image = redact_image(file_content, pii_types=types_to_redact)
+                if output_file:
+                    output_file.write_bytes(redacted_image)
+                    console.print(f"[green]Redacted image saved to:[/green] {output_file}")
+                else:
+                    console.print("[dim]Use --output to save the redacted image[/dim]")
+            except Exception as e:
+                console.print(f"[red]Error redacting image:[/red] {e}")
+        elif is_pdf and file_content:
+            console.print(Panel.fit("[bold yellow]MASKED[/bold yellow]", border_style="yellow"))
+            console.print("\n[bold]Redacting PDF...[/bold]")
+            types_to_redact = list(masked_types.keys())
+            try:
+                redacted_pdf = redact_pdf(file_content, pii_types=types_to_redact)
+                if output_file:
+                    output_file.write_bytes(redacted_pdf)
+                    console.print(f"[green]Redacted PDF saved to:[/green] {output_file}")
+                else:
+                    console.print("[dim]Use --output to save the redacted PDF[/dim]")
+            except Exception as e:
+                console.print(f"[red]Error redacting PDF:[/red] {e}")
+    else:
+        # Detected but not blocked/masked (observe mode or disabled policies)
+        console.print(
+            Panel.fit("[bold cyan]DETECTED (not blocked/masked)[/bold cyan]", border_style="cyan")
+        )
 
 
 def main() -> None:

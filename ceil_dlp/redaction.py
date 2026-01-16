@@ -4,110 +4,14 @@ import io
 import logging
 from pathlib import Path
 
+import pypdfium2 as pdfium
 from PIL import Image
 from presidio_image_redactor import ImageAnalyzerEngine, ImageRedactorEngine
 
+from ceil_dlp.detectors.pdf_detector import detect_pii_in_pdf
 from ceil_dlp.detectors.presidio_adapter import get_analyzer
 
 logger = logging.getLogger(__name__)
-
-
-def mask_text(text: str, matches: list[tuple[str, int, int]], pii_type: str) -> str:
-    """
-    Mask detected PII in text.
-
-    Args:
-        text: Original text
-        matches: List of (matched_text, start_pos, end_pos) tuples
-        pii_type: Type of PII being masked
-
-    Returns:
-        Text with PII masked
-    """
-    if not matches:
-        return text
-
-    # Sort matches by position (reverse order to maintain indices)
-    sorted_matches = sorted(matches, key=lambda x: x[1], reverse=True)
-
-    masked_text = text
-    for _matched_text, start, end in sorted_matches:
-        replacement = f"[REDACTED_{pii_type.upper()}]"
-        masked_text = masked_text[:start] + replacement + masked_text[end:]
-
-    return masked_text
-
-
-def _remove_overlapping_detections(
-    detections: dict[str, list[tuple[str, int, int]]],
-) -> dict[str, list[tuple[str, int, int]]]:
-    """
-    Remove overlapping detections across all PII types.
-
-    When the same text is detected as multiple types (e.g., email and URL),
-    we keep the longer match or prefer certain types. This prevents issues
-    when redacting sequentially.
-
-    Uses the shared remove_overlapping_matches utility with type priority.
-
-    Args:
-        detections: Dictionary mapping PII type to list of matches
-
-    Returns:
-        Dictionary with overlapping detections removed
-    """
-    from ceil_dlp.utils.overlaps import PatternMatch, remove_overlapping_matches
-
-    if not detections:
-        return {}
-
-    # Type priority: prefer more specific types over generic ones
-    # Higher priority = keep when overlapping (similar to preferring longer matches)
-    type_priority = {
-        "email": 10,
-        "phone": 10,
-        "credit_card": 10,
-        "ssn": 10,
-        "url": 5,  # Lower priority - often overlaps with email
-    }
-
-    # Collect all matches as PatternMatch and track their types
-    # Format: PatternMatch = (text, start, end)
-    all_matches: list[PatternMatch] = []
-    match_to_type: dict[PatternMatch, str] = {}
-
-    for pii_type, matches in detections.items():
-        for text, start, end in matches:
-            match: PatternMatch = (text, start, end)
-            all_matches.append(match)
-            match_to_type[match] = pii_type
-
-    if not all_matches:
-        return {}
-
-    # Create priority map: type priority * 1000 + length
-    # This ensures type priority takes precedence, but length breaks ties
-    priority_map: dict[PatternMatch, float] = {}
-    for match in all_matches:
-        pii_type = match_to_type[match]
-        _text, start, end = match
-        type_prio = type_priority.get(pii_type, 0)
-        length = end - start
-        # Use large multiplier so type priority dominates
-        priority_map[match] = type_prio * 1000 + length
-
-    # Use shared overlap removal with type priority
-    non_overlapping = remove_overlapping_matches(all_matches, priority_map)
-
-    # Group back by type
-    result: dict[str, list[tuple[str, int, int]]] = {}
-    for match in non_overlapping:
-        pii_type = match_to_type[match]
-        if pii_type not in result:
-            result[pii_type] = []
-        result[pii_type].append(match)
-
-    return result
 
 
 def apply_redaction(
@@ -124,16 +28,13 @@ def apply_redaction(
         Tuple of (redacted_text, redacted_items) where redacted_items maps
         PII type to list of redacted values
     """
-    # Remove overlapping detections before redacting
-    # This prevents issues when the same text is detected as multiple types
-    non_overlapping_detections = _remove_overlapping_detections(detections)
-
     # Collect all matches with their types, sorted by position (reverse order)
     # This allows us to process all matches at once, maintaining correct positions
+    # Presidio handles overlap removal internally, so we don't need to do it here
     all_matches: list[tuple[str, tuple[str, int, int]]] = []  # (pii_type, (text, start, end))
     redacted_items: dict[str, list[str]] = {}
 
-    for pii_type, matches in non_overlapping_detections.items():
+    for pii_type, matches in detections.items():
         if matches:
             # Extract matched texts for logging
             matched_texts = [match[0] for match in matches]
@@ -179,15 +80,18 @@ def redact_image(image_data: bytes | str | Path, pii_types: list[str] | None = N
         else:
             raise ValueError(f"Invalid image_data type: {type(image_data)}")
 
-        # Use Presidio Image Redactor with our configured analyzer (smaller model)
-        # Cache analyzer to avoid expensive re-initialization
+        # Use Presidio Image Redactor with our configured analyzer
+        # All custom secret recognizers are already registered in the analyzer,
+        # so we don't need to pass them as ad_hoc_recognizers
         analyzer = get_analyzer()
         image_analyzer = ImageAnalyzerEngine(analyzer_engine=analyzer)
         engine = ImageRedactorEngine(image_analyzer_engine=image_analyzer)
 
-        # Redact the image
+        # Redact the image (handles both Presidio PII and custom secrets)
         # The redact method returns a redacted PIL Image
         # fill parameter expects RGB tuple or int (0-255 for grayscale)
+        # Note: pii_types parameter is ignored - Presidio will detect all types
+        # and filtering would need to happen at the detection stage, not redaction
         redacted_image_pil = engine.redact(
             image,  # pyright: ignore[reportArgumentType]
             fill=(0, 0, 0),
@@ -211,3 +115,125 @@ def redact_image(image_data: bytes | str | Path, pii_types: list[str] | None = N
                 return f.read()
         else:
             raise ValueError(f"Invalid image_data type: {type(image_data)}") from e
+
+
+def redact_pdf(pdf_data: bytes | str | Path, pii_types: list[str] | None = None) -> bytes:
+    """
+    Redact PII in a PDF by overlaying black rectangles over detected PII areas.
+
+    This function:
+    1. Detects PII in the PDF (text and images)
+    2. Renders each page to identify PII locations
+    3. Overlays black rectangles to redact detected PII
+    4. Returns the redacted PDF as bytes
+
+    Args:
+        pdf_data: PDF as bytes, file path (str), or Path object
+        pii_types: Optional list of PII types to redact. If None, redacts all detected PII.
+
+    Returns:
+        Redacted PDF as bytes
+    """
+    try:
+        # Load PDF
+        if isinstance(pdf_data, (str, Path)):
+            pdf = pdfium.PdfDocument(pdf_data)
+        elif isinstance(pdf_data, bytes):
+            pdf = pdfium.PdfDocument(io.BytesIO(pdf_data))
+        else:
+            raise ValueError(f"Invalid pdf_data type: {type(pdf_data)}")
+
+        # Detect PII in PDF
+        enabled_types = set(pii_types) if pii_types else None
+        detections = detect_pii_in_pdf(pdf_data, enabled_types=enabled_types)
+
+        if not detections:
+            # No PII detected, return original
+            pdf.close()
+            if isinstance(pdf_data, bytes):
+                return pdf_data
+            else:
+                with open(pdf_data, "rb") as f:
+                    return f.read()
+
+        # NOTE(jadidbourbaki): Redaction approach is to: Render then Redact then Stitch
+        # In other words, we render each page to an image,
+        # then redact the PII in each rendered image,
+        # then stitch the redacted images back together into a new PDF.
+        # Trade-offs:
+        # The good part is that it handles both text and image-based PII, works for scanned PDFs
+        # The bad part is that it rasterizes PDF (loses text selectability, may increase file size)
+        # and some PDF features may be lost (forms, annotations, etc.).
+
+        redacted_pages: list[Image.Image] = []
+
+        for page_num in range(len(pdf)):
+            try:
+                page = pdf[page_num]
+
+                # Render page to image at high quality for redaction
+                # Use higher scale for better quality (3x = ~216 DPI)
+                bitmap = page.render(scale=3)
+                pil_image = bitmap.to_pil()
+
+                # Redact PII in the rendered page image using Presidio
+                redacted_image_bytes = redact_image(pil_image, pii_types=pii_types)
+                redacted_image = Image.open(io.BytesIO(redacted_image_bytes))
+
+                redacted_pages.append(redacted_image)
+
+            except Exception as page_error:
+                logger.warning(f"Error redacting PDF page {page_num}: {page_error}")
+                # If redaction fails, try to render original page
+                try:
+                    bitmap = page.render(scale=3)
+                    redacted_pages.append(bitmap.to_pil())
+                except Exception:
+                    # If rendering also fails, skip this page
+                    logger.error(f"Could not process PDF page {page_num}, skipping")
+                    continue
+
+        pdf.close()
+
+        if not redacted_pages:
+            # No pages were successfully processed, return original
+            logger.warning("No pages could be redacted, returning original PDF")
+            if isinstance(pdf_data, bytes):
+                return pdf_data
+            else:
+                with open(pdf_data, "rb") as f:
+                    return f.read()
+
+        # Create new PDF from redacted page images using PIL
+        # PIL can directly create PDFs from images
+        output_bytes = io.BytesIO()
+
+        # Convert all images to RGB mode (PDF requires RGB, not RGBA)
+        rgb_pages = []
+        for img in redacted_pages:
+            rgb_img = img.convert("RGB") if img.mode != "RGB" else img
+            rgb_pages.append(rgb_img)
+
+        # Save first image as PDF and append the rest
+        if rgb_pages:
+            rgb_pages[0].save(
+                output_bytes,
+                format="PDF",
+                save_all=True,
+                append_images=rgb_pages[1:] if len(rgb_pages) > 1 else [],
+                resolution=216.0,  # Match our 3x scale rendering (~216 DPI)
+            )
+
+        return output_bytes.getvalue()
+
+    except Exception as e:
+        logger.error(f"Error redacting PDF: {e}", exc_info=True)
+
+        # Return original PDF on error
+        if isinstance(pdf_data, bytes):
+            return pdf_data
+        elif isinstance(pdf_data, (str, Path)):
+            with open(pdf_data, "rb") as f:
+                return f.read()
+        else:
+            raise ValueError(f"Invalid pdf_data type: {type(pdf_data)}") from e

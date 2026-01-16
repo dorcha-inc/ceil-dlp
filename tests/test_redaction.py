@@ -6,7 +6,7 @@ import pytest
 from PIL import Image
 
 from ceil_dlp.detectors.pii_detector import PIIDetector
-from ceil_dlp.redaction import apply_redaction, mask_text, redact_image
+from ceil_dlp.redaction import apply_redaction, redact_image
 from ceil_dlp.utils import create_image_with_text
 
 
@@ -36,29 +36,21 @@ def test_multiple_redactions():
 def test_redaction_empty_matches():
     """Test redaction with empty matches."""
     text = "Normal text"
-    result = mask_text(text, [], "email")
+    result, _ = apply_redaction(text, {})
     assert result == text
 
 
-def test_mask_text_with_matches():
-    """Test mask_text function directly (lines 31-38)."""
-    text = "Contact me at john@example.com"
-    matches = [("john@example.com", 13, 29)]
-    result = mask_text(text, matches, "email")
-    assert "[REDACTED_EMAIL]" in result
-    assert "john@example.com" not in result
-
-
 def test_mask_text_multiple_matches():
-    """Test mask_text with multiple matches."""
+    """Test apply_redaction with multiple matches."""
     text = "Email: john@example.com, Phone: 555-123-4567"
-    matches = [
-        ("john@example.com", 7, 23),
-        ("555-123-4567", 32, 44),
-    ]
-    result = mask_text(text, matches, "email")
-    # Should mask both (though using email type for both)
+    detections = {
+        "email": [("john@example.com", 7, 23)],
+        "phone": [("555-123-4567", 32, 44)],
+    }
+    result, _ = apply_redaction(text, detections)
+    # Should mask both
     assert "[REDACTED_EMAIL]" in result
+    assert "[REDACTED_PHONE]" in result
 
 
 def test_redaction_empty_detections():

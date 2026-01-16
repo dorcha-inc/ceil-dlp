@@ -9,7 +9,6 @@ from PIL import Image
 from presidio_image_redactor import ImageAnalyzerEngine
 
 from ceil_dlp.detectors.patterns import PatternMatch
-from ceil_dlp.detectors.pii_detector import PIIDetector
 from ceil_dlp.detectors.presidio_adapter import PRESIDIO_TO_PII_TYPE, get_analyzer
 
 logger = logging.getLogger(__name__)
@@ -63,9 +62,11 @@ def detect_pii_in_image(
         # Convert Presidio results to our PatternMatch format
         results: dict[str, list[PatternMatch]] = {}
 
-        # Process Presidio results (standard PII types)
+        # Process Presidio results (standard PII types + custom secrets via PatternRecognizers)
         if analyzer_results:
             for entity in analyzer_results:
+                # Map Presidio entity type to our PII type
+                # This includes both standard Presidio types and our custom secret types
                 pii_type = PRESIDIO_TO_PII_TYPE.get(entity.entity_type, entity.entity_type.lower())
 
                 # Filter by enabled types if specified
@@ -81,42 +82,6 @@ def detect_pii_in_image(
                 if pii_type not in results:
                     results[pii_type] = []
                 results[pii_type].append((match_text, entity.start, entity.end))
-
-        # Extract OCR text and run custom pattern detection for API keys/secrets
-        try:
-            ocr_results = image_analyzer.ocr.perform_ocr(image)
-            ocr_text = image_analyzer.ocr.get_text_from_ocr_dict(ocr_results, separator=" ")
-
-            if not ocr_text or not ocr_text.strip():
-                return results
-
-            # Determine which custom types to detect
-            custom_types = set(PIIDetector.CUSTOM_TYPES)
-
-            if enabled_types:
-                # Only detect custom types that are enabled
-                custom_types = custom_types.intersection(enabled_types)
-
-            if not custom_types:
-                return results
-
-            # Create detector with only custom types to avoid duplicate Presidio detection
-            detector = PIIDetector(enabled_types=custom_types)
-            custom_detections = detector.detect(ocr_text)
-
-            # Merge custom detections with Presidio results
-            for pii_type, matches in custom_detections.items():
-                if pii_type not in results:
-                    results[pii_type] = []
-                # Mark these as detected in image for consistency
-                image_matches = [
-                    (f"[{pii_type}_detected_in_image]", start, end) for _text, start, end in matches
-                ]
-                results[pii_type].extend(image_matches)
-
-        except Exception as ocr_error:
-            # Log but don't fail - OCR extraction is best-effort
-            logger.debug(f"Could not extract OCR text for custom pattern detection: {ocr_error}")
 
         return results
 

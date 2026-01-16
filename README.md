@@ -16,7 +16,7 @@
   <a href="https://codecov.io/gh/dorcha-inc/ceil-dlp"><img src="https://codecov.io/gh/dorcha-inc/ceil-dlp/branch/main/graph/badge.svg" alt="Coverage"></a>
 </p>
 
-`ceil-dlp` is a Data Loss Prevention (DLP) plugin for [LiteLLM](https://github.com/BerriAI/litellm) that automatically detects and protects Personally Identifiable Information (PII) in LLM requests. This includes PII in both text and images (pdf support is on the way). It blocks, masks, or logs sensitive data before it reaches your LLM provider. This helps prevent you from leaking your secrets, API keys, and other sensitive information. It also helps you ensure compliance with data privacy regulations like HIPAA, PCI-DSS, GDPR, and CCPA.
+`ceil-dlp` is a Data Loss Prevention (DLP) plugin for [LiteLLM](https://github.com/BerriAI/litellm) that automatically detects and protects Personally Identifiable Information (PII) in LLM requests. This includes PII in text, images, and PDFs. It blocks, masks, or logs sensitive data before it reaches your LLM provider. This helps prevent you from leaking your secrets, API keys, and other sensitive information. It also helps you ensure compliance with data privacy regulations like HIPAA, PCI-DSS, GDPR, and CCPA.
 
 ## Usage
 
@@ -62,7 +62,7 @@ This will remove the callback from your LiteLLM config. You can also use `--remo
 
 ### Existing LiteLLM Guardrails
 
-LiteLLM offers built-in [guardrails](https://docs.litellm.ai/docs/proxy/guardrails/quick_start) for many tasks involving LLM interaction security. However, we unable to find a solution that helps with all the features a person or team working with sensitive data in a real-world LLM interaction would require.
+LiteLLM offers built-in [guardrails](https://docs.litellm.ai/docs/proxy/guardrails/quick_start) for many tasks involving LLM interaction security. However, we were unable to find a solution that helps with all the features a person or team working with sensitive data in a real-world LLM interaction would require.
 
 To be more specific, LiteLLM provides two separate guardrails for data protection, each with significant limitations. LiteLLM's [Presidio guardrail](https://docs.litellm.ai/docs/proxy/guardrails/pii_masking_v2) handles PII and PHI masking using Microsoft Presidio, but it does not handle secrets (API keys, tokens, credentials, etc.). Additionally, it only supports LiteLLM-wide configuration and cannot apply different policies to different models. It also seems to lack support for detecting PII in images, only working with text content. LiteLLM's [Secret Detection guardrail](https://docs.litellm.ai/docs/proxy/guardrails/secret_detection) is an Enterprise-only feature that requires a paid license. While it can detect secrets and can be configured per model (by defining separate guardrail configurations), it only performs redaction and cannot block requests containing secrets. It also only works on text content and does not detect or redact secrets in images.
 

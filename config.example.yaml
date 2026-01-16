@@ -45,10 +45,6 @@ policies:
     action: block
     enabled: true
 
-  high_entropy_token:
-    action: block
-    enabled: true
-
   # Medium-risk items - mask by default (recommended)
   email:
     action: mask # block | mask
@@ -131,7 +127,6 @@ policies:
 #   - api_key
 #   - pem_key
 #   - jwt_token
-#   - high_entropy_token
 
 # Model matching patterns
 # Patterns support regex matching:

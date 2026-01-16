@@ -2,10 +2,11 @@
 
 import logging
 from functools import lru_cache
+from typing import cast
 
-from presidio_analyzer import AnalyzerEngine
+from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer, RecognizerRegistry
 
-from ceil_dlp.detectors.patterns import PatternMatch
+from ceil_dlp.detectors.patterns import PatternMatch, PatternType
 
 logger = logging.getLogger(__name__)
 
@@ -65,17 +66,74 @@ PRESIDIO_TO_PII_TYPE: dict[str, str] = {
     "KR_RRN": "kr_rrn",
     # Thailand
     "TH_TNIN": "th_tnin",
+    # Custom secret types (mapped from PatternRecognizer entity names)
+    "API_KEY": "api_key",
+    "PEM_KEY": "pem_key",
+    "JWT_TOKEN": "jwt_token",
+    "DATABASE_URL": "database_url",
+    "CLOUD_CREDENTIAL": "cloud_credential",
 }
+
+
+def _create_secret_recognizers() -> list[PatternRecognizer]:
+    """
+    Create Presidio PatternRecognizer objects for custom secrets (API keys, etc.).
+
+    Returns:
+        List of PatternRecognizer objects
+    """
+    from ceil_dlp.detectors.patterns import PATTERNS
+
+    recognizers = []
+
+    # Custom types that can be represented as regex patterns
+    custom_types = {"api_key", "pem_key", "jwt_token", "database_url", "cloud_credential"}
+
+    for pattern_type in custom_types:
+        if pattern_type not in PATTERNS:
+            continue
+
+        patterns_list = PATTERNS[cast(PatternType, pattern_type)]
+        presidio_patterns: list[Pattern] = []
+
+        for regex_pattern in patterns_list:
+            # Convert our regex pattern to Presidio Pattern
+            presidio_pattern = Pattern(
+                name=f"{pattern_type}_{len(presidio_patterns)}",
+                regex=regex_pattern,
+                score=0.8,  # Confidence score
+            )
+            presidio_patterns.append(presidio_pattern)
+
+        if presidio_patterns:
+            # Create PatternRecognizer for this secret type
+            recognizer = PatternRecognizer(
+                supported_entity=pattern_type.upper(),  # e.g., "API_KEY"
+                patterns=presidio_patterns,
+                supported_language="en",
+            )
+            recognizers.append(recognizer)
+
+    return recognizers
 
 
 @lru_cache(maxsize=1)
 def get_analyzer() -> AnalyzerEngine:
-    """Get cached AnalyzerEngine instance to avoid expensive re-initialization.
+    """Get cached AnalyzerEngine instance with custom secret recognizers.
 
     This is shared across all Presidio-based detection modules (text, image, redaction)
     to ensure we only create one analyzer instance per process.
     """
-    return AnalyzerEngine()
+    # Create registry with built-in recognizers
+    registry = RecognizerRegistry()
+    registry.load_predefined_recognizers()
+
+    # Add custom secret recognizers
+    secret_recognizers = _create_secret_recognizers()
+    for recognizer in secret_recognizers:
+        registry.add_recognizer(recognizer)
+
+    return AnalyzerEngine(registry=registry)
 
 
 def _detect_with_presidio(text: str) -> dict[str, list[PatternMatch]]:

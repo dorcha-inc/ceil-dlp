@@ -134,10 +134,8 @@ def test_config_new_pii_types_defaults():
     config = Config()
     assert "pem_key" in config.policies
     assert "jwt_token" in config.policies
-    assert "high_entropy_token" in config.policies
     assert config.policies["pem_key"].action == "block"
     assert config.policies["jwt_token"].action == "block"
-    assert config.policies["high_entropy_token"].action == "block"
 
 
 def test_policy_model():

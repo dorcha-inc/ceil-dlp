@@ -33,7 +33,6 @@ class Config(BaseModel):
         "api_key": {"action": "block", "enabled": True},
         "pem_key": {"action": "block", "enabled": True},
         "jwt_token": {"action": "block", "enabled": True},
-        "high_entropy_token": {"action": "block", "enabled": True},
         "email": {"action": "mask", "enabled": True},
         "phone": {"action": "mask", "enabled": True},
     }
@@ -50,7 +49,6 @@ class Config(BaseModel):
                 "api_key": {"action": "block", "enabled": True},
                 "pem_key": {"action": "block", "enabled": True},
                 "jwt_token": {"action": "block", "enabled": True},
-                "high_entropy_token": {"action": "block", "enabled": True},
                 "email": {"action": "mask", "enabled": True},
                 "phone": {"action": "mask", "enabled": True},
             }.items()
