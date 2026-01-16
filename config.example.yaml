@@ -1,0 +1,142 @@
+# ceil-dlp Configuration Example
+# This file demonstrates all available configuration options for ceil-dlp
+# Copy this file and customize it for your environment
+
+# Mode: Controls how ceil-dlp handles detected sensitive data
+# - observe: Log detections but don't block or mask (useful for testing)
+# - warn: Log and warn, but don't block or mask
+# - enforce: Actually block or mask based on policy actions (default)
+mode: enforce
+
+# Policies: Define how each PII type is handled
+policies:
+  # High-risk items - block by default (recommended)
+  credit_card:
+    action: block # block | mask
+    enabled: true
+    # Optional: Model-specific rules
+    # If models.allow is specified, these models bypass this policy
+    # If models.block is specified, only these models are affected
+    # If models is omitted, policy applies to all models
+    # models:
+    #   allow:
+    #     - "ollama/.*"  # Allow credit cards for all ollama models
+    #   block:
+    #     - "openai/.*"  # Block credit cards for all OpenAI models
+
+  ssn:
+    action: block
+    enabled: true
+
+  api_key:
+    action: block
+    enabled: true
+    # Example: Allow API keys for specific trusted models
+    # models:
+    #   allow:
+    #     - "ollama/qwen3:0.6b"
+    #     - "self-hosted/.*"
+
+  pem_key:
+    action: block
+    enabled: true
+
+  jwt_token:
+    action: block
+    enabled: true
+
+  high_entropy_token:
+    action: block
+    enabled: true
+
+  # Medium-risk items - mask by default (recommended)
+  email:
+    action: mask # block | mask
+    enabled: true
+    # Example: Block emails for external models, mask for local models
+    # models:
+    #   block:
+    #     - "openai/.*"
+    #     - "anthropic/.*"
+    #   allow:
+    #     - "ollama/.*"
+
+  phone:
+    action: mask
+    enabled: true
+
+  # Additional PII types supported by Presidio
+  # These are detected by Presidio and can be configured similarly
+  person:
+    action: mask
+    enabled: true
+
+  location:
+    action: mask
+    enabled: true
+
+  ip_address:
+    action: mask
+    enabled: true
+
+  url:
+    action: mask
+    enabled: true
+
+  date_time:
+    action: mask
+    enabled: true
+
+  iban:
+    action: block
+    enabled: true
+
+  crypto:
+    action: block
+    enabled: true
+
+  us_driver_license:
+    action: block
+    enabled: true
+
+  us_passport:
+    action: block
+    enabled: true
+
+  uk_nhs:
+    action: block
+    enabled: true
+
+  uk_nino:
+    action: block
+    enabled: true
+
+  medical_license:
+    action: block
+    enabled: true
+# Audit logging (optional)
+# Path to log file for audit trail of all detections and actions
+# If not specified, uses CEIL_DLP_AUDIT_LOG environment variable
+# If neither is set, audit logging is disabled
+# audit_log_path: /var/log/ceil-dlp/audit.log
+
+# PII types to detect (optional)
+# If specified, only these types will be detected
+# If not specified or empty, all enabled types are detected
+# enabled_pii_types:
+#   - credit_card
+#   - ssn
+#   - email
+#   - phone
+#   - api_key
+#   - pem_key
+#   - jwt_token
+#   - high_entropy_token
+
+# Model matching patterns
+# Patterns support regex matching:
+# - "ollama/qwen3:0.6b" - exact match
+# - "ollama/qwen.*" - matches any qwen model
+# - "ollama/.*" - matches all ollama models
+# - "openai/.*" - matches all OpenAI models
+# - "self-hosted/.*" - matches all self-hosted models
