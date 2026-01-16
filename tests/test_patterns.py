@@ -243,7 +243,8 @@ def test_detect_pattern_api_key_sendgrid():
 
 def test_detect_pattern_api_key_twilio():
     """Test Twilio API key detection."""
-    text = "Twilio key: SKdeadbeefdeadbeefdeadbeefdeadbeef"
+    # Using clearly fake test value (all zeros) to avoid triggering secret scanners
+    text = "Twilio key: SK00000000000000000000000000000000"
     matches = detect_pattern(text, "api_key")
     assert len(matches) > 0
     assert any(match[0].startswith("SK") and len(match[0]) == 34 for match in matches)
