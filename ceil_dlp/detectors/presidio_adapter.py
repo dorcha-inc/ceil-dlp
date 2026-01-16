@@ -3,7 +3,6 @@
 import logging
 
 from presidio_analyzer import AnalyzerEngine
-from presidio_analyzer.nlp_engine import NlpEngineProvider
 
 from ceil_dlp.detectors.patterns import PatternMatch
 
@@ -18,35 +17,8 @@ PRESIDIO_TO_PII_TYPE: dict[str, str] = {
 }
 
 
-# Lazy initialization of analyzer to avoid import-time model loading
-_analyzer: AnalyzerEngine | None = None
-
-
-def get_presidio_analyzer() -> AnalyzerEngine:
-    """
-    Get or create AnalyzerEngine instance, using smaller spaCy model.
-
-    This is a shared utility used by text detection, image detection, and image redaction.
-    Uses en_core_web_sm (smaller, faster model) instead of the default en_core_web_lg.
-
-    Returns:
-        Configured AnalyzerEngine instance
-    """
-    global _analyzer
-    if _analyzer is None:
-        # Use en_core_web_sm (smaller, faster model)
-        configuration = {
-            "nlp_engine_name": "spacy",
-            "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
-        }
-        provider = NlpEngineProvider(nlp_configuration=configuration)
-        nlp_engine = provider.create_engine()
-        _analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=["en"])
-    return _analyzer
-
-
 def _detect_with_presidio(text: str) -> dict[str, list[PatternMatch]]:
-    analyzer = get_presidio_analyzer()
+    analyzer = AnalyzerEngine()
     results = analyzer.analyze(text=text, language="en")
     detections: dict[str, list[PatternMatch]] = {}
     for result in results:

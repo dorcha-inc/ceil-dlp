@@ -6,8 +6,9 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
-from litellm import CustomLogger
-from litellm.proxy.proxy_server import DualCache, UserAPIKeyAuth
+from litellm.caching.dual_cache import DualCache
+from litellm.integrations.custom_logger import CustomLogger
+from litellm.proxy.proxy_server import UserAPIKeyAuth
 
 from ceil_dlp.audit import AuditLogger
 from ceil_dlp.config import Config, Policy

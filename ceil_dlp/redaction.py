@@ -5,9 +5,8 @@ import logging
 from pathlib import Path
 
 from PIL import Image
+from presidio_analyzer import AnalyzerEngine
 from presidio_image_redactor import ImageAnalyzerEngine, ImageRedactorEngine
-
-from ceil_dlp.detectors.presidio_adapter import get_presidio_analyzer
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +80,7 @@ def redact_image(image_data: bytes | str | Path, pii_types: list[str] | None = N
     """
     try:
         # Load image
+        image: Image.Image
         if isinstance(image_data, (str, Path)):
             image = Image.open(image_data)
             original_format = image.format
@@ -91,20 +91,19 @@ def redact_image(image_data: bytes | str | Path, pii_types: list[str] | None = N
             raise ValueError(f"Invalid image_data type: {type(image_data)}")
 
         # Use Presidio Image Redactor with our configured analyzer (smaller model)
-        analyzer = get_presidio_analyzer()
+        analyzer = AnalyzerEngine()
         image_analyzer = ImageAnalyzerEngine(analyzer_engine=analyzer)
         engine = ImageRedactorEngine(image_analyzer_engine=image_analyzer)
 
         # Redact the image
         # The redact method returns a redacted PIL Image
         # fill parameter expects RGB tuple or int (0-255 for grayscale)
-        redacted_image_pil = engine.redact(image, fill=(0, 0, 0))  # Black fill
+        redacted_image_pil = engine.redact(image, fill=(0, 0, 0))  # pyright: ignore[reportArgumentType]
 
         # Convert back to bytes
         output = io.BytesIO()
         # Preserve original format if available, otherwise use PNG
         save_format = original_format or "PNG"
-        # Type ignore: redact returns PIL.Image which has save method
         redacted_image_pil.save(output, format=save_format)  # type: ignore[attr-defined]
         return output.getvalue()
 

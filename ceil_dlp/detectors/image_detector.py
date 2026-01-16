@@ -5,10 +5,10 @@ import logging
 from pathlib import Path
 
 from PIL import Image
+from presidio_analyzer import AnalyzerEngine
 from presidio_image_redactor import ImageAnalyzerEngine
 
 from ceil_dlp.detectors.patterns import PatternMatch
-from ceil_dlp.detectors.presidio_adapter import get_presidio_analyzer
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ def detect_pii_in_image(
 
         # Use Presidio Image Redactor with our configured analyzer (smaller model)
         # This performs OCR and PII detection in one step
-        analyzer = get_presidio_analyzer()
+        analyzer = AnalyzerEngine()
         image_analyzer = ImageAnalyzerEngine(analyzer_engine=analyzer)
         analyzer_results = image_analyzer.analyze(
             image=image,

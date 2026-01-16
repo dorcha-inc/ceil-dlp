@@ -57,9 +57,9 @@ def test_detect_with_presidio_multiple_types():
 def test_detect_with_presidio_exception_handling():
     """Test Presidio exception handling."""
 
-    # Mock analyzer to raise an exception
-    with patch("ceil_dlp.detectors.presidio_adapter.get_presidio_analyzer") as mock_get:
-        mock_analyzer = mock_get.return_value
+    # Mock AnalyzerEngine to raise an exception
+    with patch("ceil_dlp.detectors.presidio_adapter.AnalyzerEngine") as mock_analyzer_class:
+        mock_analyzer = mock_analyzer_class.return_value
         mock_analyzer.analyze.side_effect = Exception("Test error")
 
         with pytest.raises(RuntimeError, match="Failed to detect PII with Presidio"):
