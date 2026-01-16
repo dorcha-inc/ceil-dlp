@@ -1,6 +1,7 @@
 """Adapter to integrate Presidio for standard PII detection."""
 
 import logging
+from functools import lru_cache
 
 from presidio_analyzer import AnalyzerEngine
 
@@ -17,8 +18,18 @@ PRESIDIO_TO_PII_TYPE: dict[str, str] = {
 }
 
 
+@lru_cache(maxsize=1)
+def get_analyzer() -> AnalyzerEngine:
+    """Get cached AnalyzerEngine instance to avoid expensive re-initialization.
+
+    This is shared across all Presidio-based detection modules (text, image, redaction)
+    to ensure we only create one analyzer instance per process.
+    """
+    return AnalyzerEngine()
+
+
 def _detect_with_presidio(text: str) -> dict[str, list[PatternMatch]]:
-    analyzer = AnalyzerEngine()
+    analyzer = get_analyzer()
     results = analyzer.analyze(text=text, language="en")
     detections: dict[str, list[PatternMatch]] = {}
     for result in results:

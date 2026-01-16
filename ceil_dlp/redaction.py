@@ -5,8 +5,9 @@ import logging
 from pathlib import Path
 
 from PIL import Image
-from presidio_analyzer import AnalyzerEngine
 from presidio_image_redactor import ImageAnalyzerEngine, ImageRedactorEngine
+
+from ceil_dlp.detectors.presidio_adapter import get_analyzer
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,8 @@ def redact_image(image_data: bytes | str | Path, pii_types: list[str] | None = N
             raise ValueError(f"Invalid image_data type: {type(image_data)}")
 
         # Use Presidio Image Redactor with our configured analyzer (smaller model)
-        analyzer = AnalyzerEngine()
+        # Cache analyzer to avoid expensive re-initialization
+        analyzer = get_analyzer()
         image_analyzer = ImageAnalyzerEngine(analyzer_engine=analyzer)
         engine = ImageRedactorEngine(image_analyzer_engine=image_analyzer)
 

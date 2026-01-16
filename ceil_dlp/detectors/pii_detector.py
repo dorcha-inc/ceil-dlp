@@ -11,7 +11,16 @@ class PIIDetector:
     """
 
     PRESIDIO_TYPES = frozenset({"credit_card", "ssn", "email", "phone"})
-    CUSTOM_TYPES = frozenset({"api_key", "pem_key", "jwt_token", "high_entropy_token"})
+    CUSTOM_TYPES = frozenset(
+        {
+            "api_key",
+            "pem_key",
+            "jwt_token",
+            "database_url",
+            "cloud_credential",
+            "high_entropy_token",
+        }
+    )
     ENABLED_TYPES_DEFAULT = PRESIDIO_TYPES.union(CUSTOM_TYPES)
 
     def __init__(self, enabled_types: set[str] | None = None) -> None:
@@ -21,7 +30,7 @@ class PIIDetector:
         Args:
             enabled_types: list of PII types to detect. If None, detects all types.
                           Options: credit_card, ssn, email, phone, api_key, pem_key,
-                          jwt_token, high_entropy_token.
+                          jwt_token, database_url, cloud_credential, high_entropy_token.
         """
         if enabled_types is None:
             self.enabled_types = self.ENABLED_TYPES_DEFAULT

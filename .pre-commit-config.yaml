@@ -33,9 +33,9 @@ repos:
         pass_filenames: false
         always_run: true
 
-      # - id: test
-      #   name: run tests
-      #   entry: make test
-      #   language: system
-      #   pass_filenames: false
-      #   always_run: true
+      - id: test
+        name: run tests
+        entry: make test
+        language: system
+        pass_filenames: false
+        always_run: true

@@ -2,13 +2,14 @@
 
 import io
 import logging
+from functools import lru_cache
 from pathlib import Path
 
 from PIL import Image
-from presidio_analyzer import AnalyzerEngine
 from presidio_image_redactor import ImageAnalyzerEngine
 
 from ceil_dlp.detectors.patterns import PatternMatch
+from ceil_dlp.detectors.presidio_adapter import get_analyzer
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,13 @@ PRESIDIO_TO_PII_TYPE: dict[str, str] = {
     "PHONE_NUMBER": "phone",
     "INTERNATIONAL_PHONE_NUMBER": "phone",
 }
+
+
+@lru_cache(maxsize=1)
+def _get_image_analyzer() -> ImageAnalyzerEngine:
+    """Get cached ImageAnalyzerEngine instance to avoid expensive re-initialization."""
+    analyzer = get_analyzer()
+    return ImageAnalyzerEngine(analyzer_engine=analyzer)
 
 
 def detect_pii_in_image(
@@ -52,8 +60,8 @@ def detect_pii_in_image(
 
         # Use Presidio Image Redactor with our configured analyzer (smaller model)
         # This performs OCR and PII detection in one step
-        analyzer = AnalyzerEngine()
-        image_analyzer = ImageAnalyzerEngine(analyzer_engine=analyzer)
+        # Use cached image analyzer to avoid expensive re-initialization
+        image_analyzer = _get_image_analyzer()
         analyzer_results = image_analyzer.analyze(
             image=image,
             language="en",

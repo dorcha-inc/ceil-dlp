@@ -35,7 +35,7 @@ def test_detect_pattern_api_key_bearer():
     text = "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
     matches = detect_pattern(text, "api_key")
     assert len(matches) > 0
-    assert any("Bearer" in match[0] for match in matches)
+    assert any("eyJ" in match[0] for match in matches)
 
 
 def test_detect_pattern_unknown_type():
@@ -215,3 +215,58 @@ def test_detect_pattern_jwt_token():
     matches = detect_pattern(text, "jwt_token")
     assert len(matches) > 0
     assert any("eyJ" in match[0] for match in matches)
+
+
+def test_detect_pattern_api_key_gitlab():
+    """Test GitLab token detection."""
+    text = "GitLab token: glpat-1234567890abcdef1234567890"
+    matches = detect_pattern(text, "api_key")
+    assert len(matches) > 0
+    assert any("glpat-" in match[0] for match in matches)
+
+
+def test_detect_pattern_api_key_mailgun():
+    """Test Mailgun API key detection."""
+    text = "Mailgun key: key-1234567890abcdef1234567890abcdef"
+    matches = detect_pattern(text, "api_key")
+    assert len(matches) > 0
+    assert any("key-" in match[0] and len(match[0]) == 36 for match in matches)
+
+
+def test_detect_pattern_api_key_sendgrid():
+    """Test SendGrid API key detection."""
+    text = "SendGrid key: SG.1234567890abcdef1234567890abcdef"
+    matches = detect_pattern(text, "api_key")
+    assert len(matches) > 0
+    assert any("SG." in match[0] for match in matches)
+
+
+def test_detect_pattern_api_key_twilio():
+    """Test Twilio API key detection."""
+    text = "Twilio key: SKdeadbeefdeadbeefdeadbeefdeadbeef"
+    matches = detect_pattern(text, "api_key")
+    assert len(matches) > 0
+    assert any(match[0].startswith("SK") and len(match[0]) == 34 for match in matches)
+
+
+def test_detect_pattern_database_url_postgres():
+    """Test PostgreSQL database URL detection."""
+    text = "Database: postgresql://user:pass@localhost:5432/dbname"
+    matches = detect_pattern(text, "database_url")
+    assert len(matches) > 0
+    assert any("postgres" in match[0] for match in matches)
+
+
+def test_detect_pattern_database_url_mongodb():
+    """Test MongoDB database URL detection."""
+    text = "MongoDB: mongodb+srv://user:pass@cluster.mongodb.net/dbname"
+    matches = detect_pattern(text, "database_url")
+    assert len(matches) > 0
+    assert any("mongodb" in match[0] for match in matches)
+
+
+def test_detect_pattern_cloud_credential_aws():
+    """Test AWS credentials detection."""
+    text = "[default]\naws_access_key_id = AKIA1234567890ABCDEF\naws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    matches = detect_pattern(text, "cloud_credential")
+    assert len(matches) > 0
