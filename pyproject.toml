@@ -9,7 +9,7 @@ description = "Data Loss Prevention plugin for LiteLLM: Block and mask PII in LL
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Dorcha Inc", email = "partners@getdorcha.com" }]
+authors = [{ name = "hayder", email = "hayder@alumni.harvard.edu" }]
 keywords = [
     "dlp",
     "pii",

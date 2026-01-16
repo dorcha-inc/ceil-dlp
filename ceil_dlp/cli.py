@@ -143,14 +143,14 @@ def install(
 
     # update LiteLLM config if requested
     if update_config:
+        # calculate callback path
+        # The wrapper adds its directory to sys.path, so we can always use
+        # the simple module name regardless of where LiteLLM is run from
+        callback_path = "ceil_dlp_callback.proxy_handler_instance"
+
         try:
             with litellm_config.open() as f:
                 config = yaml.safe_load(f) or {}
-
-            # calculate callback path
-            # The wrapper adds its directory to sys.path, so we can always use
-            # the simple module name regardless of where LiteLLM is run from
-            callback_path = "ceil_dlp_callback.proxy_handler_instance"
 
             # check if callback is already configured
             callbacks = config.get("litellm_settings", {}).get("callbacks", [])

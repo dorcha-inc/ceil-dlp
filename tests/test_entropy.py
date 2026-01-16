@@ -59,3 +59,13 @@ def test_detect_high_entropy_tokens_position_tracking():
     matched_text, start, end = match
     assert text[start:end] == matched_text
     assert matched_text in text
+
+
+def test_detect_high_entropy_tokens_max_length():
+    """Test that tokens exceeding max_length are skipped."""
+    # Create a token longer than default max_length (200)
+    long_token = "a1b2c3d4e5f6g7h8i9j0" * 15  # 300 characters
+    text = f"My secret is {long_token} end"
+    matches = detect_high_entropy_tokens(text, min_entropy=4.0, min_length=20, max_length=200)
+    # The long token should be skipped due to max_length check
+    assert len(matches) == 0
