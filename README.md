@@ -3,10 +3,9 @@
      Public domain (CC0) - available for use without restrictions. -->
 
 <div align="center">
-  <img src="share/ceil-dlp-logo-no-bg.png" alt="ceil-dlp logo" width="400">
+  <img src="share/ceil-dlp-logo-no-bg-logo.png" alt="ceil-dlp logo" width="400">
   
-  <h1>ceil-dlp</h1>
-  <p>DLP plugin for LiteLLM that seamlessly manages PII in LLM interactions.</p>
+  <p>Open-Source DLP for LLMs and Agentic Workflows</p>
 </div>
 
 <p align="center">
