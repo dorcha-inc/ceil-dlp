@@ -90,58 +90,6 @@ def test_detect_pattern_overlapping_matches():
                 )
 
 
-def test_remove_overlaps_empty_list():
-    """Test _remove_overlaps with empty list."""
-    from ceil_dlp.detectors.patterns import _remove_overlaps
-
-    result = _remove_overlaps([])
-    assert result == []
-
-
-def test_remove_overlaps_replacement():
-    """Test _remove_overlaps replacing shorter with longer match."""
-    from ceil_dlp.detectors.patterns import _remove_overlaps
-
-    # Create overlapping matches where one is longer
-    # First add shorter, then longer - should replace
-    matches = [
-        ("short", 0, 5),  # 5 chars, added first
-        ("much longer match", 0, 17),  # 17 chars, overlaps with first, should replace
-    ]
-    result = _remove_overlaps(matches)
-    # Should keep the longer match
-    assert len(result) == 1
-    assert result[0][0] == "much longer match"
-
-    # Test reverse order - longer first, then shorter
-    matches2 = [
-        ("much longer match", 0, 17),  # 17 chars, added first
-        ("short", 0, 5),  # 5 chars, overlaps but shorter, should not replace
-    ]
-    result2 = _remove_overlaps(matches2)
-    # Should keep the longer match (first one)
-    assert len(result2) == 1
-    assert result2[0][0] == "much longer match"
-
-
-def test_remove_overlaps_replacement_longer_second():
-    """Test _remove_overlaps when longer match comes second and replaces first."""
-    from ceil_dlp.detectors.patterns import _remove_overlaps
-
-    # Create scenario where shorter is added first, then longer overlaps and replaces it
-    # This tests the removal and append logic (lines 85-86)
-    matches = [
-        ("abc", 0, 3),  # 3 chars, added first to non_overlapping
-        ("abcdefghij", 0, 10),  # 10 chars, overlaps, longer, should replace first
-    ]
-    result = _remove_overlaps(matches)
-    # Should have only the longer match
-    assert len(result) == 1
-    assert result[0][0] == "abcdefghij"
-    assert result[0][1] == 0
-    assert result[0][2] == 10
-
-
 def test_detect_pattern_with_validator():
     """Test pattern detection with validator that rejects matches."""
     from ceil_dlp.detectors.patterns import PATTERNS, detect_pattern

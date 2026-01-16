@@ -8,7 +8,7 @@ import math
 import re
 from collections import Counter
 
-from ceil_dlp.detectors.patterns import PatternMatch, _remove_overlaps
+from ceil_dlp.utils.overlaps import PatternMatch, remove_overlapping_matches
 
 
 def calculate_shannon_entropy(text: str) -> float:
@@ -91,6 +91,6 @@ def detect_high_entropy_tokens(
 
     # Remove overlapping matches (keep longest)
     if matches:
-        matches = _remove_overlaps(matches)
+        matches = remove_overlapping_matches(matches)
 
     return matches

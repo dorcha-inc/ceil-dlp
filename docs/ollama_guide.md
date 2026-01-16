@@ -52,19 +52,29 @@ uv pip install 'litellm[proxy]' ceil-dlp
 
 ## Setup
 
-Create a `config.yaml` file:
+First, create a basic LiteLLM `config.yaml` file with your model configuration:
 
 ```yaml
 model_list:
   - model_name: ollama/qwen3:0.6b
     litellm_params:
       model: ollama/qwen3:0.6b
-
-litellm_settings:
-  callbacks: ceil_dlp.ceil_dlp_callback.proxy_handler_instance
 ```
 
-This uses the default configuration (enforce mode). To customize, create a separate `ceil-dlp.yaml` file and set the `CEIL_DLP_CONFIG_PATH` environment variable.
+Then use the `ceil-dlp` CLI to automatically configure ceil-dlp:
+
+```bash
+ceil-dlp install config.yaml
+```
+
+This will automatically:
+1. Create a `ceil_dlp_callback.py` wrapper file in the same directory as your config
+2. Create a starter `ceil-dlp.yaml` configuration file
+3. Update your `config.yaml` to include the ceil-dlp callback
+
+The generated `ceil-dlp.yaml` uses the default configuration (enforce mode). You can customize it by editing the file directly.
+
+## Running LiteLLM
 
 Then run LiteLLM:
 
@@ -199,12 +209,13 @@ On Windows: Download from [GitHub](https://github.com/UB-Mannheim/tesseract/wiki
 
 ## Custom Configuration Example
 
-By default, `ceil-dlp` masks email addresses. This example will go over creating a custom configuration
+By default, `ceil-dlp` masks email addresses. This example will go over customizing the configuration
 to block emails instead.
 
-### Create a Custom Config
+### Edit the Config File
 
-Create a file called `ceil-dlp.yaml`:
+The `ceil-dlp install` command creates a `ceil-dlp.yaml` file in the same directory as your LiteLLM config.
+Simply edit this file to customize the behavior:
 
 ```yaml
 mode: enforce
@@ -218,19 +229,10 @@ policies:
     enabled: true
 ```
 
-### Use the Custom Config
-
-Set the `CEIL_DLP_CONFIG_PATH` environment variable and restart LiteLLM:
+The callback wrapper automatically detects and uses the `ceil-dlp.yaml` file in the same directory. Just restart LiteLLM after making changes:
 
 ```bash
-export CEIL_DLP_CONFIG_PATH=./ceil-dlp.yaml
 uv run litellm --config config.yaml --port 4000
-```
-
-Or set it inline:
-
-```bash
-CEIL_DLP_CONFIG_PATH=./ceil-dlp.yaml uv run litellm --config config.yaml --port 4000
 ```
 
 ### Test the Blocking Behavior
@@ -372,5 +374,28 @@ This request should succeed and the API key will be passed through to the model 
     "total_tokens": 22
   }
 }
+```
+
+## Removing ceil-dlp
+
+To remove ceil-dlp from your LiteLLM configuration, use the `remove` command:
+
+```bash
+ceil-dlp remove config.yaml
+```
+
+This will:
+- Remove the callback from your LiteLLM `config.yaml`
+- Remove the `ceil_dlp_callback.py` wrapper file (by default)
+
+You can also control what gets removed using flags:
+- `--keep-callback-file` - Keep the callback wrapper file
+- `--remove-config-file` - Also remove the `ceil-dlp.yaml` config file
+- `--no-update-config` - Don't update the LiteLLM config file
+
+For example, to remove the callback from the config but keep all files:
+
+```bash
+ceil-dlp remove config.yaml --keep-callback-file --no-update-config
 ```
 

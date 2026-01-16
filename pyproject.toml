@@ -74,6 +74,9 @@ Repository = "https://github.com/dorcha-inc/ceil-dlp"
 where = ["."]
 include = ["ceil_dlp*"]
 
+[project.scripts]
+ceil-dlp = "ceil_dlp.cli:main"
+
 [tool.black]
 line-length = 100
 target-version = ["py311", "py312"]
@@ -116,6 +119,7 @@ warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
 show_error_codes = true
+exclude = ["build/", "dist/", "examples/"]
 
 [[tool.mypy.overrides]]
 module = "litellm.*"

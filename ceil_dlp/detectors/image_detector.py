@@ -10,19 +10,9 @@ from presidio_image_redactor import ImageAnalyzerEngine
 
 from ceil_dlp.detectors.patterns import PatternMatch
 from ceil_dlp.detectors.pii_detector import PIIDetector
-from ceil_dlp.detectors.presidio_adapter import get_analyzer
+from ceil_dlp.detectors.presidio_adapter import PRESIDIO_TO_PII_TYPE, get_analyzer
 
 logger = logging.getLogger(__name__)
-
-
-# Map Presidio entity types to our PII types
-PRESIDIO_TO_PII_TYPE: dict[str, str] = {
-    "CREDIT_CARD": "credit_card",
-    "US_SSN": "ssn",
-    "EMAIL_ADDRESS": "email",
-    "PHONE_NUMBER": "phone",
-    "INTERNATIONAL_PHONE_NUMBER": "phone",
-}
 
 
 @lru_cache(maxsize=1)
@@ -38,9 +28,10 @@ def detect_pii_in_image(
     """
     Detect PII in an image using Presidio Image Redactor and custom pattern detection.
 
-    Uses Presidio Image Redactor's analyzer to perform OCR and PII detection for standard
-    PII types (credit cards, SSNs, emails, phones). Also extracts OCR text and runs custom
-    pattern detection for API keys, secrets, and other custom types.
+    Uses Presidio Image Redactor's analyzer to perform OCR and PII detection for all
+    Presidio entity types (credit cards, SSNs, emails, phones, person names, locations,
+    IP addresses, URLs, medical licenses, and country-specific identifiers). Also extracts
+    OCR text and runs custom pattern detection for API keys, secrets, and other custom types.
 
     Args:
         image_data: Image as bytes, file path (str), or Path object

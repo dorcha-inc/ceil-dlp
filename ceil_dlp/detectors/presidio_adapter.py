@@ -10,11 +10,61 @@ from ceil_dlp.detectors.patterns import PatternMatch
 logger = logging.getLogger(__name__)
 
 PRESIDIO_TO_PII_TYPE: dict[str, str] = {
-    "EMAIL_ADDRESS": "email",
-    "PHONE_NUMBER": "phone",
-    "US_SSN": "ssn",
+    # Global entities
     "CREDIT_CARD": "credit_card",
+    "CRYPTO": "crypto",
+    "DATE_TIME": "date_time",
+    "EMAIL_ADDRESS": "email",
+    "IBAN_CODE": "iban_code",
+    "IP_ADDRESS": "ip_address",
+    "LOCATION": "location",
+    "PERSON": "person",
+    "PHONE_NUMBER": "phone",
     "INTERNATIONAL_PHONE_NUMBER": "phone",
+    "MEDICAL_LICENSE": "medical_license",
+    "URL": "url",
+    "NRP": "nrp",
+    # United States
+    "US_BANK_NUMBER": "us_bank_number",
+    "US_DRIVER_LICENSE": "us_driver_license",
+    "US_ITIN": "us_itin",
+    "US_PASSPORT": "us_passport",
+    "US_SSN": "ssn",
+    # United Kingdom
+    "UK_NHS": "uk_nhs",
+    "UK_NINO": "uk_nino",
+    # Spain
+    "ES_NIF": "es_nif",
+    "ES_NIE": "es_nie",
+    # Italy
+    "IT_FISCAL_CODE": "it_fiscal_code",
+    "IT_DRIVER_LICENSE": "it_driver_license",
+    "IT_VAT_CODE": "it_vat_code",
+    "IT_PASSPORT": "it_passport",
+    "IT_IDENTITY_CARD": "it_identity_card",
+    # Poland
+    "PL_PESEL": "pl_pesel",
+    # Singapore
+    "SG_NRIC_FIN": "sg_nric_fin",
+    "SG_UEN": "sg_uen",
+    # Australia
+    "AU_ABN": "au_abn",
+    "AU_ACN": "au_acn",
+    "AU_TFN": "au_tfn",
+    "AU_MEDICARE": "au_medicare",
+    # India
+    "IN_PAN": "in_pan",
+    "IN_AADHAAR": "in_aadhaar",
+    "IN_VEHICLE_REGISTRATION": "in_vehicle_registration",
+    "IN_VOTER": "in_voter",
+    "IN_PASSPORT": "in_passport",
+    "IN_GSTIN": "in_gstin",
+    # Finland
+    "FI_PERSONAL_IDENTITY_CODE": "fi_personal_identity_code",
+    # Korea
+    "KR_RRN": "kr_rrn",
+    # Thailand
+    "TH_TNIN": "th_tnin",
 }
 
 

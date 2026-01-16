@@ -20,29 +20,52 @@
 
 ## Usage
 
-The setup is as simple as installing:
+Install ceil-dlp:
 
 ```bash
 uv pip install ceil-dlp
 ```
 
-and enabling in LiteLLM by adding to your `config.yaml`:
+Then use the CLI to automatically configure LiteLLM:
 
-```yaml
-litellm_settings:
-  callbacks: ceil_dlp.ceil_dlp_callback.proxy_handler_instance
+```bash
+ceil-dlp install path/to/config.yaml
 ```
+
+This command will:
+1. Create a local `ceil_dlp_callback.py` wrapper in the same directory as your LiteLLM config
+2. Create a starter `ceil-dlp.yaml` configuration file
+3. Automatically update your LiteLLM `config.yaml` to include the callback
 
 Then run: `litellm --config config.yaml --port 4000`
 
-To customize behavior, create a `ceil-dlp.yaml` file and set the `CEIL_DLP_CONFIG_PATH` environment variable.
+To customize behavior, edit the generated `ceil-dlp.yaml` file in the same directory as your config.
 
-And you're done!
+To remove ceil-dlp from your configuration:
+
+```bash
+ceil-dlp remove path/to/config.yaml
+```
+
+This will remove the callback from your LiteLLM config. You can also use `--remove-callback-file` and `--remove-config-file` flags to remove the generated files.
 
 ## Documentation
 
 - See the [Quick Start Guide](docs/ollama_guide.md) for a comprehensive, step-by-step tutorial with Ollama
 - Take a look at the [example configuration file](config.example.yaml) for all available options
+
+## About
+
+`ceil-dlp` is an open-source solution that handles both PII + PHI (via Presidio) and secrets (API keys, tokens, credentials, etc.) in one integrated solution, eliminating the need to configure and maintain separate guardrails. `ceil-dlp` supports model-specific policies using pattern-based rules within a single policy definition, allowing you to configure different rules for different models directly in your configuration file. For example, you can block API keys or PII for an external model provider such as Anthropic or OpenAI while allowing them for locally hosted models. This can be done using simple regex patterns in your config, all without requiring separate guardrail definitions or per-request configuration.
+
+`ceil-dlp` also provides comprehensive image support, detecting both PII and secrets in images through OCR, not just in text content. It applies automatically to all requests via LiteLLM's callback system, so you don't need to specify a `guardrails` parameter on every request. Finally, it supports both blocking and masking actions for all detection types, giving you full control over how sensitive data is handled.
+
+### Existing LiteLLM Guardrails
+
+LiteLLM offers built-in [guardrails](https://docs.litellm.ai/docs/proxy/guardrails/quick_start) for many tasks involving LLM interaction security. However, we unable to find a solution that helps with all the features a person or team working with sensitive data in a real-world LLM interaction would require.
+
+To be more specific, LiteLLM provides two separate guardrails for data protection, each with significant limitations. LiteLLM's [Presidio guardrail](https://docs.litellm.ai/docs/proxy/guardrails/pii_masking_v2) handles PII and PHI masking using Microsoft Presidio, but it does not handle secrets (API keys, tokens, credentials, etc.). Additionally, it only supports LiteLLM-wide configuration and cannot apply different policies to different models. It also seems to lack support for detecting PII in images, only working with text content. LiteLLM's [Secret Detection guardrail](https://docs.litellm.ai/docs/proxy/guardrails/secret_detection) is an Enterprise-only feature that requires a paid license. While it can detect secrets and can be configured per model (by defining separate guardrail configurations), it only performs redaction and cannot block requests containing secrets. It also only works on text content and does not detect or redact secrets in images.
+
 
 ## Contributing
 

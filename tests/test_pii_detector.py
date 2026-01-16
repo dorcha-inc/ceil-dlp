@@ -165,3 +165,87 @@ def test_enabled_types_empty():
     detector2 = PIIDetector(enabled_types=None)
     detections2 = detector2.detect(text)
     assert len(detections2) > 0
+
+
+def test_person_detection():
+    """Test person name detection."""
+    detector = PIIDetector()
+    text = "My name is John Smith and I work with Jane Doe"
+    detections = detector.detect(text)
+    assert "person" in detections
+    assert len(detections["person"]) > 0
+
+
+def test_location_detection():
+    """Test location detection."""
+    detector = PIIDetector()
+    text = "I live in New York, United States and visited Paris, France"
+    detections = detector.detect(text)
+    assert "location" in detections
+    assert len(detections["location"]) > 0
+
+
+def test_ip_address_detection():
+    """Test IP address detection."""
+    detector = PIIDetector()
+    text = "Server IP: 192.168.1.1 and backup: 10.0.0.1"
+    detections = detector.detect(text)
+    assert "ip_address" in detections
+    assert len(detections["ip_address"]) > 0
+
+
+def test_url_detection():
+    """Test URL detection."""
+    detector = PIIDetector()
+    text = "Visit https://example.com or http://test.org for details"
+    detections = detector.detect(text)
+    assert "url" in detections
+    assert len(detections["url"]) > 0
+
+
+def test_date_time_detection():
+    """Test date/time detection."""
+    detector = PIIDetector()
+    text = "Meeting on January 15, 2024 at 3:00 PM"
+    detections = detector.detect(text)
+    assert "date_time" in detections
+    assert len(detections["date_time"]) > 0
+
+
+def test_iban_detection():
+    """Test IBAN code detection."""
+    detector = PIIDetector()
+    # Example UK IBAN
+    text = "Bank account: GB82 WEST 1234 5698 7654 32"
+    detections = detector.detect(text)
+    # IBAN detection may vary, so just verify no crash
+    assert isinstance(detections, dict)
+
+
+def test_multiple_new_presidio_types():
+    """Test detection of multiple new Presidio entity types."""
+    detector = PIIDetector()
+    text = (
+        "John Smith lives in Paris, France. "
+        "Contact at https://example.com or 192.168.1.1. "
+        "Meeting on January 15, 2024 at 3:00 PM."
+    )
+    detections = detector.detect(text)
+    # Should detect at least some of these types
+    detected_types = set(detections.keys())
+    assert len(detected_types) > 0
+    # Should include at least one of: person, location, url, ip_address, date_time
+    assert any(
+        t in detected_types for t in ["person", "location", "url", "ip_address", "date_time"]
+    )
+
+
+def test_enabled_types_with_new_presidio_types():
+    """Test that enabled_types filtering works with new Presidio types."""
+    detector = PIIDetector(enabled_types={"person", "location"})
+    text = "John Smith lives in Paris, France. Email: john@example.com"
+    detections = detector.detect(text)
+    # Should detect person and location
+    assert "person" in detections or "location" in detections
+    # Should not detect email (not in enabled_types)
+    assert "email" not in detections

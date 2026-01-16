@@ -2,7 +2,7 @@
 
 from ceil_dlp.detectors.entropy import detect_high_entropy_tokens
 from ceil_dlp.detectors.patterns import PatternMatch, detect_pattern
-from ceil_dlp.detectors.presidio_adapter import detect_with_presidio
+from ceil_dlp.detectors.presidio_adapter import PRESIDIO_TO_PII_TYPE, detect_with_presidio
 
 
 class PIIDetector:
@@ -10,7 +10,8 @@ class PIIDetector:
     Detects PII in text using Presidio for standard PII and custom patterns for API keys.
     """
 
-    PRESIDIO_TYPES = frozenset({"credit_card", "ssn", "email", "phone"})
+    # All Presidio entity types supported by ceil-dlp
+    PRESIDIO_TYPES = frozenset(set(PRESIDIO_TO_PII_TYPE.values()))
     CUSTOM_TYPES = frozenset(
         {
             "api_key",
@@ -28,9 +29,12 @@ class PIIDetector:
         Initialize PII detector.
 
         Args:
-            enabled_types: list of PII types to detect. If None, detects all types.
-                          Options: credit_card, ssn, email, phone, api_key, pem_key,
-                          jwt_token, database_url, cloud_credential, high_entropy_token.
+            enabled_types: Set of PII types to detect. If None, detects all types.
+                          Includes all Presidio entity types (credit_card, ssn, email, phone,
+                          person, location, ip_address, url, medical_license, crypto, date_time,
+                          iban_code, nrp, and country-specific types like us_driver_license,
+                          uk_nhs, es_nif, it_fiscal_code, etc.) plus custom types (api_key,
+                          pem_key, jwt_token, database_url, cloud_credential, high_entropy_token).
         """
         if enabled_types is None:
             self.enabled_types = self.ENABLED_TYPES_DEFAULT

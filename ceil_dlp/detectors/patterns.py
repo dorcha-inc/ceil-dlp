@@ -13,13 +13,12 @@ from collections import Counter
 from collections.abc import Callable
 from typing import Literal
 
+from ceil_dlp.utils.overlaps import PatternMatch, remove_overlapping_matches
+
 logger = logging.getLogger(__name__)
 
 PatternType = Literal["api_key", "pem_key", "jwt_token", "database_url", "cloud_credential"]
 PatternValidator = Callable[[str], bool] | None
-
-# PatternMatch is a tuple of (matched_text, start_pos, end_pos)
-PatternMatch = tuple[str, int, int]
 
 
 def _calculate_shannon_entropy(text: str) -> float:
@@ -229,59 +228,6 @@ def detect_pattern(text: str, pattern_type: PatternType) -> list[PatternMatch]:
 
     # Remove overlapping matches (keep the longest)
     if matches:
-        matches = _remove_overlaps(matches)
+        matches = remove_overlapping_matches(matches)
 
     return matches
-
-
-def _remove_overlaps(matches: list[PatternMatch]) -> list[PatternMatch]:
-    """Remove overlapping matches, keeping the longest ones.
-
-    This is necessary because:
-    1. Multiple patterns can match the same or overlapping text
-    2. Generic patterns (e.g., "Bearer token") can overlap with specific ones (e.g., "sk-...")
-    3. Prevents duplicate detections in the final results
-
-    Args:
-        matches: List of (text, start, end) tuples
-
-    Returns:
-        List of non-overlapping matches, with longer matches preferred
-    """
-    if not matches:
-        return []
-
-    # Sort by start position, then by length (longest first) for stable ordering
-    sorted_matches = sorted(matches, key=lambda x: (x[1], -(x[2] - x[1])))
-    non_overlapping: list[PatternMatch] = []
-
-    for match in sorted_matches:
-        text, start, end = match
-        match_length = end - start
-
-        # Check if this match overlaps with any existing match
-        overlap_found = False
-        to_remove = []
-
-        for i, (_, existing_start, existing_end) in enumerate(non_overlapping):
-            existing_length = existing_end - existing_start
-
-            # Check for overlap
-            if not (end <= existing_start or start >= existing_end):
-                overlap_found = True
-                # If current match is longer, mark existing for removal
-                if match_length > existing_length:
-                    to_remove.append(i)
-                else:
-                    # Current match is shorter or equal, skip it
-                    break
-
-        # Remove marked overlaps (in reverse order to maintain indices)
-        for i in reversed(to_remove):
-            non_overlapping.pop(i)
-
-        # Add current match if no overlap or if it's longer than overlapping ones
-        if not overlap_found or to_remove:
-            non_overlapping.append(match)
-
-    return non_overlapping
