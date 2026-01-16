@@ -57,12 +57,14 @@ def apply_redaction(
     return redacted_text, redacted_items
 
 
-def redact_image(image_data: bytes | str | Path, pii_types: list[str] | None = None) -> bytes:
+def redact_image(
+    image_data: bytes | str | Path | Image.Image, pii_types: list[str] | None = None
+) -> bytes:
     """
     Redact PII in an image using Presidio Image Redactor.
 
     Args:
-        image_data: Image as bytes, file path (str), or Path object
+        image_data: Image as bytes, file path (str), Path object, or PIL Image
         pii_types: Optional list of PII types to redact. If None, redacts all detected PII.
 
     Returns:
@@ -71,7 +73,11 @@ def redact_image(image_data: bytes | str | Path, pii_types: list[str] | None = N
     try:
         # Load image
         image: Image.Image
-        if isinstance(image_data, (str, Path)):
+        if isinstance(image_data, Image.Image):
+            # Already a PIL Image, use it directly
+            image = image_data
+            original_format = image.format
+        elif isinstance(image_data, (str, Path)):
             image = Image.open(image_data)
             original_format = image.format
         elif isinstance(image_data, bytes):
@@ -108,7 +114,13 @@ def redact_image(image_data: bytes | str | Path, pii_types: list[str] | None = N
         logger.error(f"Error redacting image: {e}", exc_info=True)
 
         # Return original image on error
-        if isinstance(image_data, bytes):
+        if isinstance(image_data, Image.Image):
+            # Convert PIL Image to bytes
+            output = io.BytesIO()
+            original_format = image_data.format or "PNG"
+            image_data.save(output, format=original_format)
+            return output.getvalue()
+        elif isinstance(image_data, bytes):
             return image_data
         elif isinstance(image_data, (str, Path)):
             with open(image_data, "rb") as f:

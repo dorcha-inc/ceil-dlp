@@ -1,0 +1,33 @@
+# ceil-dlp Configuration for PDF Redaction Testing
+# This config sets api_key and pem_key to "mask" to enable redaction instead of blocking
+
+mode: enforce # observe | warn | enforce
+
+policies:
+  # Set to mask to see redactions in PDF
+  api_key:
+    action: mask # Changed from block to mask
+    enabled: true
+
+  pem_key:
+    action: mask # Changed from block to mask
+    enabled: true
+
+  # Other high-risk items - block by default
+  credit_card:
+    action: mask
+    enabled: true
+  ssn:
+    action: mask
+    enabled: true
+  jwt_token:
+    action: block
+    enabled: true
+
+  # Medium-risk items - mask by default
+  email:
+    action: mask
+    enabled: true
+  phone:
+    action: mask
+    enabled: true

@@ -22,7 +22,7 @@ def _get_image_analyzer() -> ImageAnalyzerEngine:
 
 
 def detect_pii_in_image(
-    image_data: bytes | str | Path, enabled_types: set[str] | None = None
+    image_data: bytes | str | Path | Image.Image, enabled_types: set[str] | None = None
 ) -> dict[str, list[PatternMatch]]:
     """
     Detect PII in an image using Presidio Image Redactor and custom pattern detection.
@@ -33,7 +33,7 @@ def detect_pii_in_image(
     OCR text and runs custom pattern detection for API keys, secrets, and other custom types.
 
     Args:
-        image_data: Image as bytes, file path (str), or Path object
+        image_data: Image as bytes, file path (str), Path object, or PIL Image
         enabled_types: Optional set of PII types to detect. If None, detects all types.
 
     Returns:
@@ -42,7 +42,10 @@ def detect_pii_in_image(
     """
     try:
         # Load image
-        if isinstance(image_data, (str, Path)):
+        if isinstance(image_data, Image.Image):
+            # Already a PIL Image, use it directly
+            image = image_data
+        elif isinstance(image_data, (str, Path)):
             image = Image.open(image_data)
         elif isinstance(image_data, bytes):
             image = Image.open(io.BytesIO(image_data))
