@@ -3,7 +3,7 @@
      Public domain (CC0) - available for use without restrictions. -->
 
 <div align="center">
-  <img src="share/ceil-dlp-logo-no-bg-logo.png" alt="ceil-dlp logo" width="400">
+  <img src="https://raw.githubusercontent.com/dorcha-inc/ceil-dlp/main/share/ceil-dlp-logo-no-bg-logo.png" alt="ceil-dlp logo" width="400">
   
   <p>Open-Source DLP for LLMs and Agentic Workflows</p>
 </div>
