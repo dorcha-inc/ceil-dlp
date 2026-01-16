@@ -98,7 +98,10 @@ def redact_image(image_data: bytes | str | Path, pii_types: list[str] | None = N
         # Redact the image
         # The redact method returns a redacted PIL Image
         # fill parameter expects RGB tuple or int (0-255 for grayscale)
-        redacted_image_pil = engine.redact(image, fill=(0, 0, 0))  # pyright: ignore[reportArgumentType]
+        redacted_image_pil = engine.redact(
+            image,  # pyright: ignore[reportArgumentType]
+            fill=(0, 0, 0),
+        )
 
         # Convert back to bytes
         output = io.BytesIO()
