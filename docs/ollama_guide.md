@@ -1,6 +1,6 @@
-# Running ceil-dlp with local Ollama models
+# Quick Start Guide: Running ceil-dlp with LiteLLM
 
-This guide shows you how to set up `ceil-dlp` with [Ollama](https://ollama.ai/) models through LiteLLM. Ollama allows you to run LLMs locally, and `ceil-dlp` adds an extra layer of security by detecting and protecting PII before it reaches your models.
+This is a comprehensive quickstart tutorial that uses [Ollama](https://ollama.ai/) as an example, but the same principles apply to any LLM provider supported by LiteLLM (OpenAI, Anthropic, Google, etc.). Simply replace the Ollama model names with your preferred provider's model names in the configuration. Ollama allows you to run LLMs locally, and `ceil-dlp` adds an extra layer of security by detecting and protecting PII before it reaches your models.
 
 ## Prerequisites
 
@@ -235,7 +235,7 @@ CEIL_DLP_CONFIG_PATH=./ceil-dlp.yaml uv run litellm --config config.yaml --port 
 
 ### Test the Blocking Behavior
 
-Now test with a request containing an email:
+Now test with a request containing an API key:
 
 ```bash
 curl http://localhost:4000/v1/chat/completions \
@@ -243,7 +243,7 @@ curl http://localhost:4000/v1/chat/completions \
   -d '{
     "model": "ollama/qwen3:0.6b",
     "messages": [
-      {"role": "user", "content": "My email is john@example.com"}
+      {"role": "user", "content": "My API key is AIza12345678901234567890123456789012345"}
     ]
   }'
 ```
@@ -253,7 +253,7 @@ The request should be blocked with a response like:
 ```json
 {
   "error": {
-    "message": "{'error': '[ceil-dlp] Request blocked: Detected sensitive data (email)'}",
+    "message": "{'error': '[ceil-dlp] Request blocked: Detected sensitive data (api_key)'}",
     "type": "None",
     "param": "None",
     "code": "400"
@@ -262,3 +262,115 @@ The request should be blocked with a response like:
 ```
 
 You should also see a log entry indicating the block in the LiteLLM console output.
+
+## Model-Specific Policies
+
+`ceil-dlp` supports model-aware policies, allowing you to apply different rules to different models. This is useful when you want stricter security for some models while allowing more flexibility for trusted local models.
+
+### Example: Block API Keys for One Model, Allow for Another
+
+Suppose you want to block API keys when using `ollama/ministral3:3b` (a larger, potentially less trusted model) but allow them for `ollama/qwen3:0.6b` (a smaller, trusted local model).
+
+Create a `ceil-dlp.yaml` configuration:
+
+```yaml
+mode: enforce
+
+policies:
+  api_key:
+    action: block
+    enabled: true
+    models:
+      allow:
+        - "ollama/qwen3:0.6b"  # Allow API keys for this specific model
+  # Other policies apply to all models by default
+  email:
+    action: mask
+    enabled: true
+  phone:
+    action: mask
+    enabled: true
+```
+
+### Model Matching
+
+If there is no `models` field, then the policy applies to all models. This is the default behavior. 
+
+If there is a `models.allow` list, then models matching patterns in this list will skip the policy i.e the policy is not applied
+for these models. The policy is enforced for all models not in the allow list.
+
+If there is a `models.block` list, then models matching patterns in this list will apply the policy, however 
+models not in the blocklist will skip the policy.
+
+Patterns support regex matching. For example:
+
+- `"ollama/qwen3:0.6b"` - exact match
+- `"ollama/qwen.*"` - matches any qwen model
+- `"ollama/.*"` - matches all ollama models
+
+### Testing Model-Specific Policies
+
+With the configuration above, test blocking behavior:
+
+```bash
+curl http://localhost:4000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/ministral3:3b",
+    "messages": [
+      {"role": "user", "content": "My API key is AIza00000000000000000000000000000000000"}
+    ]
+  }'
+```
+
+Expected response:
+```json
+{
+  "error": {
+    "message": "{'error': '[ceil-dlp] Request blocked: Detected sensitive data (api_key)'}",
+    "type": "None",
+    "param": "None",
+    "code": "400"
+  }
+}
+```
+
+Now test the allowed model:
+
+```bash
+curl http://localhost:4000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3:0.6b",
+    "messages": [
+      {"role": "user", "content": "My API key is AIza00000000000000000000000000000000000"}
+    ]
+  }'
+```
+
+This request should succeed and the API key will be passed through to the model (since the policy is skipped for this model)"
+
+```json
+{
+  "id": "chatcmpl-8780e909-a243-4c79-a99b-3b0eb7ea80a7",
+  "created": 1768526891,
+  "model": "ollama/qwen3:0.6b",
+  "object": "chat.completion",
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "Great to know! Your API key is AIza0000000000000000000000000000000",
+        "role": "assistant"
+      }
+    }
+  ],
+  "usage": {
+    "completion_tokens": 0,
+    "prompt_tokens": 22,
+    "total_tokens": 22
+  }
+}
+```
+

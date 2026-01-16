@@ -1,0 +1,10 @@
+model_list:
+  - model_name: ollama/qwen3:0.6b
+    litellm_params:
+      model: ollama/qwen3:0.6b
+  - model_name: ollama/ministral3:3b
+    litellm_params:
+      model: ollama/ministral3:3b
+
+litellm_settings:
+  callbacks: ceil_dlp.ceil_dlp_callback.proxy_handler_instance

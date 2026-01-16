@@ -36,15 +36,14 @@ litellm_settings:
 
 Then run: `litellm --config config.yaml --port 4000`
 
-To customize behavior, create a `ceil-dlp.yaml` file and set the `CEIL_DLP_CONFIG_PATH` environment variable. See [QUICKSTART.md](QUICKSTART.md) for detailed configuration options.
+To customize behavior, create a `ceil-dlp.yaml` file and set the `CEIL_DLP_CONFIG_PATH` environment variable.
 
 And you're done!
 
 ## Documentation
 
-- See the [Quick Start Guide](QUICKSTART.md) for installation and basic usage
-- For a user-friendly end to end example, see the [Local Setup Guide](docs/ollama_guide.md)
-- Take a look at the [example configuration file](config.example.yaml)
+- See the [Quick Start Guide](docs/ollama_guide.md) for a comprehensive, step-by-step tutorial with Ollama
+- Take a look at the [example configuration file](config.example.yaml) for all available options
 
 ## Contributing
 
