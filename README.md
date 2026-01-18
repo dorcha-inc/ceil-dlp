@@ -19,15 +19,9 @@
 `ceil-dlp` is a Data Loss Prevention (DLP) plugin for [LiteLLM](https://github.com/BerriAI/litellm) that automatically detects and protects Personally Identifiable Information (PII) in LLM requests. This includes PII in text, images, and PDFs. It blocks, masks, or logs sensitive data before it reaches your LLM provider. This helps prevent you from leaking your secrets, API keys, and other sensitive information. It also helps you ensure compliance with data privacy regulations like HIPAA, PCI-DSS, GDPR, and CCPA.
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/dorcha-inc/ceil-dlp/main/share/dl_read_id_fade.gif" alt="real id redacted" width="400">
-</div>
-
-<div align="center">
-  <img src="https://raw.githubusercontent.com/dorcha-inc/ceil-dlp/main/share/aws_console_fade.gif" alt="aws console redacted" width="400">
-</div>
-
-<div align="center">
-  <img src="https://raw.githubusercontent.com/dorcha-inc/ceil-dlp/main/share/research_paper_fade.gif" alt="research paper redacted" width="400">
+  <img src="https://raw.githubusercontent.com/dorcha-inc/ceil-dlp/main/share/dl_real_id_fade.gif" alt="real id redacted" width="260">
+  <img src="https://raw.githubusercontent.com/dorcha-inc/ceil-dlp/main/share/aws_console_fade.gif" alt="aws console redacted" width="260">
+  <img src="https://raw.githubusercontent.com/dorcha-inc/ceil-dlp/main/share/research_paper_fade.gif" alt="research paper redacted" width="260">
 </div>
 
 ## Usage
