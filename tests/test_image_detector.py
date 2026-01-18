@@ -36,7 +36,7 @@ def test_detect_pii_in_image_with_email():
 def test_detect_pii_in_image_with_phone():
     """Test image detection with phone number."""
     # Create image with phone text
-    text = "Call me at 555-123-4567"
+    text = "Call me at   555-123-4567"
     img_bytes = create_image_with_text(text)
 
     detections = detect_pii_in_image(img_bytes)
@@ -130,14 +130,14 @@ def test_detect_pii_in_image_invalid_type():
 
 
 def test_detect_pii_in_image_ocr_error_handling():
-    """Test image detection when OCR fails."""
-    # Create a valid image but mock OCR to fail
+    """Test image detection error handling."""
+    # Create a valid image with no text (OCR will return empty results)
     img = Image.new("RGB", (100, 100), color="white")
     img_bytes = io.BytesIO()
     img.save(img_bytes, format="PNG")
     img_bytes.seek(0)
 
-    # The function should handle OCR errors gracefully
-    # Even if OCR fails, it should return a dict (may be empty)
+    # The function should handle any OCR errors gracefully
+    # Even if OCR fails or returns no results, it should return a dict (may be empty)
     detections = detect_pii_in_image(img_bytes.getvalue())
     assert isinstance(detections, dict)

@@ -36,20 +36,37 @@ PATTERNS: dict[PatternType, list[str]] = {
         r"\bxox[bapes]-\d+-[a-zA-Z0-9-]{27,}\b",
         # Google API keys (AIza prefix, exactly 39 chars)
         r"\bAIza[0-9A-Za-z_-]{35}\b",
-        # AWS access keys (AKIA prefix, exactly 20 chars)
+        # OCR-tolerant Google API keys: allow character misreads and count variations
+        r"\bAIza[0-9A-Za-z_\-/|]{33,37}\b",
+        # AWS access keys (AKIA prefix, exactly 20 chars total)
+        # Standard format with word boundaries
         r"\bAKIA[0-9A-Z]{16}\b",
+        # OCR-tolerant AWS access keys: handles common OCR misreads
+        # OCR may misread: 7→/, 0→O, I→1, etc. Allow 14-18 chars to handle count errors
+        r"\bAKIA[0-9A-Z/|]{14,18}(?:\s*\([^)]+\))?\b",
         # AWS secret access keys (base64-like, exactly 40 chars with high entropy chars)
         r"\b[A-Za-z0-9/+=]{40}\b",
+        # OCR-tolerant AWS secret access keys: allow character misreads and count variations
+        r"\b[A-Za-z0-9/+=|]{38,42}\b",
         # Azure Storage Account keys (base64, 88 chars)
         r"\b[A-Za-z0-9+/]{86}==\b",
+        # OCR-tolerant Azure Storage Account keys: allow character misreads and count variations
+        r"\b[A-Za-z0-9+/|]{84,90}==\b",
         # Heroku API keys (UUID format)
         r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
+        # OCR-tolerant Heroku API keys: allow hex misreads (0→O, 1→I) and slight count variations
+        # Note: UUID structure is preserved, but allow character misreads within each segment
+        r"\b[0-9a-f/|]{7,9}-[0-9a-f/|]{3,5}-[0-9a-f/|]{3,5}-[0-9a-f/|]{3,5}-[0-9a-f/|]{11,13}\b",
         # Mailgun API keys (key- prefix, 32 hex chars)
         r"\bkey-[0-9a-f]{32}\b",
+        # OCR-tolerant Mailgun API keys: allow hex misreads (0→O, 1→I, etc.) and count variations
+        r"\bkey-[0-9a-f/|]{30,34}\b",
         # SendGrid API keys (SG. prefix, base64-like, 22+ chars)
         r"\bSG\.[A-Za-z0-9_-]{22,}\b",
         # Twilio API keys (SK prefix, 32 hex chars)
         r"\bSK[0-9a-f]{32}\b",
+        # OCR-tolerant Twilio API keys: allow hex misreads and count variations
+        r"\bSK[0-9a-f/|]{30,34}\b",
         # Square API keys (sq0atp- or sq0csp- prefix)
         r"\bsq0[ac]sp-[0-9A-Za-z\-_]{32,}\b",
         # Square OAuth secrets (sq0csp- prefix)

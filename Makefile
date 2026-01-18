@@ -4,14 +4,12 @@ help: ## Show this help message
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-install: ## Install the package in production mode
-	uv sync
-
-install-dev: ## Install the package with dev dependencies
-	uv sync --all-extras
-	uv pip install pre-commit
+install: sync ## Install the package in production mode
+	uv pip install -e .
+	
+install-dev: sync ## Install the package with dev dependencies
+	uv pip install -e .[dev]
 	pre-commit install || true
-	$(MAKE) download-spacy-model
 
 sync: ## Sync dependencies from pyproject.toml
 	uv sync --all-extras
@@ -40,13 +38,11 @@ lint: ## Run linters (ruff and mypy)
 	uv run ruff check .
 	uv run mypy .
 
-format: ## Format code with ruff and black
+format: ## Format code with ruff
 	uv run ruff format .
-	uv run black .
 
 format-check: ## Check if code is formatted correctly
 	uv run ruff format --check .
-	uv run black --check .
 
 typecheck: ## Run type checker
 	uv run mypy .
@@ -62,7 +58,15 @@ build: ## Build the package
 pre-commit: ## Run pre-commit hooks on all files
 	uv run pre-commit run --all-files
 
-download-spacy-model: ## Download spaCy model required by Presidio
-	@echo "Installing spaCy model en_core_web_sm..."
-	uv pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl || \
-	echo "Failed to install model. Please check available versions at https://github.com/explosion/spacy-models/releases"
+examples: install ## Run examples and generate redacted files
+	./examples/images/run.sh
+	./examples/pdf/run.sh
+
+example-gifs: ## Generate gifs from example images
+	@for image in aws_console dl_real_id research_paper; do \
+		echo "Creating fade GIF for $$image..."; \
+		uv run python scripts/create_fade_gif.py \
+			examples/images/$$image.png \
+			examples/images/$$image.redacted.png \
+			-o share/$${image}_fade.gif; \
+	done

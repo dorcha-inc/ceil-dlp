@@ -14,14 +14,9 @@ from ceil_dlp.audit import AuditLogger
 from ceil_dlp.config import Config, Policy
 from ceil_dlp.detectors.image_detector import detect_pii_in_image
 from ceil_dlp.detectors.model_matcher import matches_model
-from ceil_dlp.detectors.pii_detector import PIIDetector
-from ceil_dlp.redaction import apply_redaction, redact_image
-
-_root_logger = logging.getLogger("ceil_dlp")
-if not _root_logger.handlers:
-    handler = logging.StreamHandler()
-    _root_logger.addHandler(handler)
-    _root_logger.setLevel(logging.INFO)
+from ceil_dlp.detectors.pdf_detector import detect_pii_in_pdf
+from ceil_dlp.detectors.text_detector import detect_pii_in_text
+from ceil_dlp.redaction import redact_image, redact_pdf, redact_text
 
 logger = logging.getLogger(__name__)
 
@@ -95,11 +90,10 @@ class CeilDLPHandler(CustomLogger):
             # No parameters, use defaults
             self.config = Config()
 
-        # Convert list to set for PIIDetector
-        enabled_types = (
+        # Store enabled_types for PII detection
+        self.enabled_types = (
             set(self.config.enabled_pii_types) if self.config.enabled_pii_types else None
         )
-        self.detector = PIIDetector(enabled_types=enabled_types)
         self.audit_logger = AuditLogger(log_path=self.config.audit_log_path)
 
         # Log initialization
@@ -148,6 +142,7 @@ class CeilDLPHandler(CustomLogger):
         dict[str, list[tuple[str, int, int]]],
         str,
         list[tuple[bytes, dict[str, list[tuple[str, int, int]]]]],
+        list[tuple[bytes, dict[str, list[tuple[str, int, int]]]]],
     ]:
         """
         Core PII detection and policy application logic.
@@ -157,15 +152,24 @@ class CeilDLPHandler(CustomLogger):
             model: Model name
 
         Returns:
-            Tuple of (detections, blocked_types, masked_types, text_content, images_with_pii)
-            where images_with_pii is a list of (image_data, image_detections) tuples
+            Tuple of (detections, blocked_types, masked_types, text_content, images_with_pii, pdfs_with_pii)
+            where images_with_pii and pdfs_with_pii are lists of (data, detections) tuples
         """
-        # Extract text and images from messages
+        # Extract text, images, and PDFs from messages
         text_content = self._extract_text_from_messages(messages)
         images = self._extract_images_from_messages(messages)
+        pdfs = self._extract_pdfs_from_messages(messages)
 
         # Detect PII in text
-        detections = self.detector.detect(text_content) if text_content else {}
+        detections = (
+            detect_pii_in_text(
+                text_content,
+                enabled_types=self.enabled_types,
+                ner_strength=self.config.ner_strength,
+            )
+            if text_content
+            else {}
+        )
 
         # Detect PII in images and track which images have PII
         images_with_pii: list[tuple[bytes, dict[str, list[tuple[str, int, int]]]]] = []
@@ -184,8 +188,25 @@ class CeilDLPHandler(CustomLogger):
                         detections[pii_type] = []
                     detections[pii_type].extend(matches)
 
+        # Detect PII in PDFs and track which PDFs have PII
+        pdfs_with_pii: list[tuple[bytes, dict[str, list[tuple[str, int, int]]]]] = []
+        if pdfs:
+            enabled_types = (
+                set(self.config.enabled_pii_types) if self.config.enabled_pii_types else None
+            )
+            for pdf_data in pdfs:
+                pdf_detections = detect_pii_in_pdf(pdf_data, enabled_types=enabled_types)
+                if pdf_detections:
+                    # Track this PDF and its detections
+                    pdfs_with_pii.append((pdf_data, pdf_detections))
+                # Merge PDF detections with text detections
+                for pii_type, matches in pdf_detections.items():
+                    if pii_type not in detections:
+                        detections[pii_type] = []
+                    detections[pii_type].extend(matches)
+
         if not detections:
-            return {}, [], {}, text_content, []
+            return {}, [], {}, text_content, [], []
 
         # Check policies and determine actions
         blocked_types = []
@@ -205,7 +226,7 @@ class CeilDLPHandler(CustomLogger):
             elif policy.action == "mask":
                 masked_types[pii_type] = matches
 
-        return detections, blocked_types, masked_types, text_content, images_with_pii
+        return detections, blocked_types, masked_types, text_content, images_with_pii, pdfs_with_pii
 
     async def async_pre_call_hook(  # type: ignore[override]
         self,
@@ -257,9 +278,14 @@ class CeilDLPHandler(CustomLogger):
                 return data
 
             # Use shared detection logic
-            detections, blocked_types, masked_types, text_content, images_with_pii = (
-                self._process_pii_detection(messages, model)
-            )
+            (
+                detections,
+                blocked_types,
+                masked_types,
+                text_content,
+                images_with_pii,
+                pdfs_with_pii,
+            ) = self._process_pii_detection(messages, model)
 
             logger.debug(
                 f"CeilDLP detection results: detections={list(detections.keys())}, "
@@ -295,60 +321,6 @@ class CeilDLPHandler(CustomLogger):
                 # Always allow request in observe mode
                 return data
 
-            elif mode == "warn":
-                # Warn mode: apply masking but never block, add warning header
-                if masked_types:
-                    redacted_text, redacted_items = apply_redaction(text_content, masked_types)
-
-                    # Update messages with redacted text
-                    modified_messages = self._replace_text_in_messages(
-                        messages, text_content, redacted_text
-                    )
-
-                    # Redact images that have PII detected
-                    if images_with_pii:
-                        # Determine which PII types in images should be masked
-                        image_pii_types_to_mask = set(masked_types.keys())
-                        modified_messages = self._redact_images_in_messages(
-                            modified_messages, images_with_pii, image_pii_types_to_mask
-                        )
-
-                    data["messages"] = modified_messages
-
-                    # Log the masking
-                    for pii_type, items in redacted_items.items():
-                        self.audit_logger.log_detection(
-                            user_id=user_id,
-                            pii_type=pii_type,
-                            action="mask",
-                            redacted_items=items,
-                            request_id=data.get("litellm_call_id"),
-                            mode=mode,
-                        )
-
-                # Log blocked types as warnings (but don't block)
-                if blocked_types:
-                    for pii_type in blocked_types:
-                        matches = detections[pii_type]
-                        matched_texts = [match[0] for match in matches]
-                        self.audit_logger.log_detection(
-                            user_id=user_id,
-                            pii_type=pii_type,
-                            action="warn",
-                            redacted_items=matched_texts,
-                            request_id=data.get("litellm_call_id"),
-                            mode=mode,
-                        )
-
-                # Add warning header
-                if blocked_types or masked_types:
-                    if "extra_headers" not in data:
-                        data["extra_headers"] = {}
-                    data["extra_headers"]["X-Ceil-DLP-Warning"] = "violations_detected"
-
-                # Always allow request in warn mode
-                return data
-
             else:  # enforce mode (default)
                 # Enforce mode: block and mask according to policies
                 if blocked_types:
@@ -363,7 +335,9 @@ class CeilDLPHandler(CustomLogger):
 
                 # Apply masking for medium-risk PII
                 if masked_types:
-                    redacted_text, redacted_items = apply_redaction(text_content, masked_types)
+                    redacted_text, redacted_items = redact_text(
+                        text_content, detections=masked_types, ner_strength=self.config.ner_strength
+                    )
 
                     # Update messages with redacted text
                     modified_messages = self._replace_text_in_messages(
@@ -376,6 +350,14 @@ class CeilDLPHandler(CustomLogger):
                         image_pii_types_to_mask = set(masked_types.keys())
                         modified_messages = self._redact_images_in_messages(
                             modified_messages, images_with_pii, image_pii_types_to_mask
+                        )
+
+                    # Redact PDFs that have PII detected
+                    if pdfs_with_pii:
+                        # Determine which PII types in PDFs should be masked
+                        pdf_pii_types_to_mask = set(masked_types.keys())
+                        modified_messages = self._redact_pdfs_in_messages(
+                            modified_messages, pdfs_with_pii, pdf_pii_types_to_mask
                         )
 
                     data["messages"] = modified_messages
@@ -464,49 +446,119 @@ class CeilDLPHandler(CustomLogger):
         images: list[bytes] = []
 
         for msg in messages:
-            if isinstance(msg, dict):
-                content = msg.get("content")
-                if content is None:
+            if not isinstance(msg, dict):
+                continue
+            content = msg.get("content")
+
+            if content is None or not isinstance(content, list):
+                continue
+
+            # Handle multimodal content (OpenAI format)
+            for item in content:
+                if not isinstance(item, dict):
                     continue
-                if isinstance(content, list):
-                    # Handle multimodal content (OpenAI format)
-                    for item in content:
-                        if isinstance(item, dict):
-                            item_type = item.get("type")
-                            if item_type == "image_url":
-                                # OpenAI format: {"type": "image_url", "image_url": {"url": "..."}}
-                                image_url_data = item.get("image_url", {})
-                                url = (
-                                    image_url_data.get("url", "")
-                                    if isinstance(image_url_data, dict)
-                                    else ""
-                                )
-                                if url.startswith("data:image"):
-                                    # Base64-encoded image
-                                    try:
-                                        # Extract base64 data (format: data:image/png;base64,<data>)
-                                        header, data = url.split(",", 1)
-                                        image_bytes = base64.b64decode(data)
-                                        images.append(image_bytes)
-                                    except Exception as e:
-                                        logger.warning(f"Failed to decode base64 image: {e}")
-                                # TODO: Support image URLs (would need to download)
-                            elif item_type == "image":
-                                # Direct image data
-                                image_data = item.get("image", "")
-                                if isinstance(image_data, bytes):
-                                    images.append(image_data)
-                                elif isinstance(image_data, str) and image_data.startswith(
-                                    "data:image"
-                                ):
-                                    try:
-                                        header, data = image_data.split(",", 1)
-                                        image_bytes = base64.b64decode(data)
-                                        images.append(image_bytes)
-                                    except Exception as e:
-                                        logger.warning(f"Failed to decode base64 image: {e}")
+                item_type = item.get("type")
+                if item_type == "image_url":
+                    # OpenAI format: {"type": "image_url", "image_url": {"url": "..."}}
+                    image_url_data = item.get("image_url", {})
+                    url = image_url_data.get("url", "") if isinstance(image_url_data, dict) else ""
+                    if url.startswith("data:image"):
+                        # Base64-encoded image
+                        try:
+                            # Extract base64 data (format: data:image/png;base64,<data>)
+                            header, data = url.split(",", 1)
+                            image_bytes = base64.b64decode(data)
+                            images.append(image_bytes)
+                        except Exception as e:
+                            logger.warning(f"Failed to decode base64 image: {e}")
+                    # TODO(jadidbourbaki): would do we do with image URLs? Do we need to download them?
+
+                elif item_type == "image":
+                    # Direct image data
+                    image_data = item.get("image", "")
+                    if isinstance(image_data, bytes):
+                        images.append(image_data)
+                    elif isinstance(image_data, str) and image_data.startswith("data:image"):
+                        try:
+                            _header, data = image_data.split(",", 1)
+                            image_bytes = base64.b64decode(data)
+                            images.append(image_bytes)
+                        except Exception as e:
+                            logger.warning(f"Failed to decode base64 image: {e}")
 
         return images
+
+    def _extract_pdfs_from_messages(self, messages: list[Any]) -> list[bytes]:
+        """
+        Extract PDFs from LiteLLM messages format.
+
+        Supports:
+        - Base64-encoded PDFs (data:application/pdf;base64,...)
+        - PDF URLs (will need to be downloaded, not implemented yet)
+
+        Args:
+            messages: List of messages in LiteLLM format
+
+        Returns:
+            List of PDF data as bytes
+        """
+        pdfs: list[bytes] = []
+
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+
+            content = msg.get("content")
+            if content is None or not isinstance(content, list):
+                continue
+
+            # Handle multimodal content (OpenAI format)
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+
+                item_type = item.get("type")
+                if item_type == "file" or item_type == "document":
+                    # Check for PDF file
+                    file_data = item.get("file", {})
+                    if isinstance(file_data, dict):
+                        url = file_data.get("url", "")
+                        if url.startswith("data:application/pdf"):
+                            # Base64-encoded PDF
+                            try:
+                                header, data = url.split(",", 1)
+                                pdf_bytes = base64.b64decode(data)
+                                pdfs.append(pdf_bytes)
+                            except Exception as e:
+                                logger.warning(f"Failed to decode base64 PDF: {e}")
+                    elif isinstance(file_data, str) and file_data.startswith(
+                        "data:application/pdf"
+                    ):
+                        try:
+                            header, data = file_data.split(",", 1)
+                            pdf_bytes = base64.b64decode(data)
+                            pdfs.append(pdf_bytes)
+                        except Exception as e:
+                            logger.warning(f"Failed to decode base64 PDF: {e}")
+                elif item_type == "pdf_url" or item_type == "document_url":
+                    # Direct PDF URL
+                    url_data = item.get("pdf_url") or item.get("document_url", {})
+                    url = (
+                        url_data.get("url", "")
+                        if isinstance(url_data, dict)
+                        else (url_data if isinstance(url_data, str) else "")
+                    )
+                    if url.startswith("data:application/pdf"):
+                        try:
+                            _header, data = url.split(",", 1)
+                            pdf_bytes = base64.b64decode(data)
+                            pdfs.append(pdf_bytes)
+                        except Exception as e:
+                            logger.warning(f"Failed to decode base64 PDF: {e}")
+
+                    # TODO(jadidbourbaki): would do we do with PDF URLs? Do we need to download them?
+
+        return pdfs
 
     def _replace_text_in_messages(
         self, messages: list[Any], old_text: str, new_text: str
@@ -514,27 +566,26 @@ class CeilDLPHandler(CustomLogger):
         """Replace text in messages while preserving structure."""
         modified = []
         for msg in messages:
-            if isinstance(msg, dict):
-                new_msg = msg.copy()
-                content = msg.get("content", "")
-                if isinstance(content, str):
-                    new_msg["content"] = content.replace(old_text, new_text)
-                elif isinstance(content, list):
-                    # Handle multimodal content
-                    new_content = []
-                    for item in content:
-                        if isinstance(item, dict) and item.get("type") == "text":
-                            new_item = item.copy()
-                            new_item["text"] = item.get("text", "").replace(old_text, new_text)
-                            new_content.append(new_item)
-                        else:
-                            new_content.append(item)
-                    new_msg["content"] = new_content
-                modified.append(new_msg)
-            else:
+            if not isinstance(msg, dict):
                 # String message - convert to dict format
                 modified.append({"content": str(msg).replace(old_text, new_text)})
-
+                continue
+            new_msg = msg.copy()
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                new_msg["content"] = content.replace(old_text, new_text)
+            elif isinstance(content, list):
+                # Handle multimodal content
+                new_content = []
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        new_item = item.copy()
+                        new_item["text"] = item.get("text", "").replace(old_text, new_text)
+                        new_content.append(new_item)
+                    else:
+                        new_content.append(item)
+                new_msg["content"] = new_content
+            modified.append(new_msg)
         return modified
 
     def _redact_images_in_messages(
@@ -566,7 +617,12 @@ class CeilDLPHandler(CustomLogger):
                 try:
                     # Get the PII types in this image that need masking
                     types_to_redact = list(image_pii_types.intersection(pii_types_to_mask))
-                    redacted_image = redact_image(image_data, pii_types=types_to_redact)
+                    redacted_image = redact_image(
+                        image_data,
+                        pii_types=types_to_redact,
+                        ocr_strength=self.config.ocr_strength,
+                        ner_strength=self.config.ner_strength,
+                    )
                     image_redaction_map[image_data] = redacted_image
                     logger.debug(f"Redacted image with PII types: {types_to_redact}")
                 except Exception as e:
@@ -658,6 +714,148 @@ class CeilDLPHandler(CustomLogger):
                         continue
 
                 # Keep non-image items and unredacted images as-is
+                new_content.append(item)
+
+            new_msg["content"] = new_content
+            modified.append(new_msg)
+
+        return modified
+
+    def _redact_pdfs_in_messages(
+        self,
+        messages: list[Any],
+        pdfs_with_pii: list[tuple[bytes, dict[str, list[tuple[str, int, int]]]]],
+        pii_types_to_mask: set[str],
+    ) -> list[Any]:
+        """
+        Redact PDFs in messages that contain PII types that should be masked.
+
+        Args:
+            messages: List of messages (may be modified from text/image redaction)
+            pdfs_with_pii: List of (pdf_data, pdf_detections) tuples
+            pii_types_to_mask: Set of PII types that should be masked
+
+        Returns:
+            Modified messages with redacted PDFs
+        """
+
+        # Create a mapping of original PDF bytes to redacted PDF bytes
+        pdf_redaction_map: dict[bytes, bytes] = {}
+
+        for pdf_data, pdf_detections in pdfs_with_pii:
+            # Check if this PDF has any PII types that should be masked
+            pdf_pii_types = set(pdf_detections.keys())
+            if pdf_pii_types.intersection(pii_types_to_mask):
+                # This PDF has PII that should be masked, redact it
+                try:
+                    # Get the PII types in this PDF that need masking
+                    types_to_redact = list(pdf_pii_types.intersection(pii_types_to_mask))
+                    redacted_pdf = redact_pdf(
+                        pdf_data,
+                        pii_types=types_to_redact,
+                        ocr_strength=self.config.ocr_strength,
+                        ner_strength=self.config.ner_strength,
+                    )
+                    pdf_redaction_map[pdf_data] = redacted_pdf
+                    logger.debug(f"Redacted PDF with PII types: {types_to_redact}")
+                except Exception as e:
+                    logger.error(f"Failed to redact PDF: {e}", exc_info=True)
+                    # Continue with original PDF on error
+
+        if not pdf_redaction_map:
+            # No PDFs to redact
+            return messages
+
+        # Replace PDFs in messages
+        modified = []
+
+        for msg in messages:
+            if not isinstance(msg, dict):
+                modified.append(msg)
+                continue
+            new_msg = msg.copy()
+            content = msg.get("content")
+
+            if not isinstance(content, list):
+                modified.append(msg)
+                continue
+            # Handle multimodal content
+            new_content = []
+            for item in content:
+                if not isinstance(item, dict):
+                    new_content.append(item)
+                    continue
+                item_type = item.get("type")
+
+                # Handle file/document type (OpenAI format)
+                if item_type in ("file", "document"):
+                    file_data = item.get("file", {})
+                    url = ""
+                    if isinstance(file_data, dict):
+                        url = file_data.get("url", "")
+                    elif isinstance(file_data, str):
+                        url = file_data
+
+                    if not url or not url.startswith("data:application/pdf"):
+                        new_content.append(item)
+                        continue
+
+                    try:
+                        header, data = url.split(",", 1)
+                        pdf_bytes = base64.b64decode(data)
+
+                        if pdf_bytes in pdf_redaction_map:
+                            # Replace with redacted PDF
+                            redacted_pdf = pdf_redaction_map[pdf_bytes]
+                            redacted_base64 = base64.b64encode(redacted_pdf).decode("utf-8")
+
+                            # Preserve the original header (data:application/pdf;base64)
+                            new_url = f"{header},{redacted_base64}"
+                            new_item = item.copy()
+                            if isinstance(file_data, dict):
+                                new_item["file"] = {"url": new_url}
+                            else:
+                                new_item["file"] = new_url
+                            new_content.append(new_item)
+                            continue
+                    except Exception as e:
+                        logger.warning(f"Failed to process PDF URL: {e}")
+
+                # Handle pdf_url/document_url type (direct PDF URL)
+                elif item_type in ("pdf_url", "document_url"):
+                    url_data = item.get("pdf_url") or item.get("document_url", {})
+                    url = (
+                        url_data.get("url", "")
+                        if isinstance(url_data, dict)
+                        else (url_data if isinstance(url_data, str) else "")
+                    )
+
+                    if not url or not url.startswith("data:application/pdf"):
+                        new_content.append(item)
+                        continue
+
+                    try:
+                        header, data = url.split(",", 1)
+                        pdf_bytes = base64.b64decode(data)
+
+                        if pdf_bytes in pdf_redaction_map:
+                            # Replace with redacted PDF
+                            redacted_pdf = pdf_redaction_map[pdf_bytes]
+                            redacted_base64 = base64.b64encode(redacted_pdf).decode("utf-8")
+
+                            # Preserve the original header
+                            new_url = f"{header},{redacted_base64}"
+                            new_item = item.copy()
+                            if item_type == "pdf_url":
+                                new_item["pdf_url"] = {"url": new_url}
+                            else:
+                                new_item["document_url"] = {"url": new_url}
+                            new_content.append(new_item)
+                            continue
+                    except Exception as e:
+                        logger.warning(f"Failed to process PDF URL: {e}")
+
+                # Keep non-PDF items and unredacted PDFs as-is
                 new_content.append(item)
 
             new_msg["content"] = new_content

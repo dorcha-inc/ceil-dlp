@@ -8,20 +8,10 @@ from ceil_dlp.config import Config, ModelRules, Policy
 
 
 def test_config_default_policies():
-    """Test that Config has default policies."""
+    """Test that Config starts with empty policies."""
     config = Config()
-    assert "credit_card" in config.policies
-    assert "ssn" in config.policies
-    assert "api_key" in config.policies
-    assert "email" in config.policies
-    assert "phone" in config.policies
-
-    # Check default actions
-    assert config.policies["credit_card"].action == "block"
-    assert config.policies["ssn"].action == "block"
-    assert config.policies["api_key"].action == "block"
-    assert config.policies["email"].action == "mask"
-    assert config.policies["phone"].action == "mask"
+    # No default policies - policies dict should be empty
+    assert config.policies == {}
 
 
 def test_config_from_dict():
@@ -33,8 +23,8 @@ def test_config_from_dict():
     }
     config = Config.from_dict(config_dict)
     assert config.policies["email"].action == "block"
-    # Should still have defaults for other types
-    assert "credit_card" in config.policies
+    # Only the explicitly set policy should be present
+    assert len(config.policies) == 1
 
 
 def test_config_from_yaml(tmp_path: Path):
@@ -61,13 +51,19 @@ def test_config_from_yaml_empty_file(tmp_path: Path):
     config_file.write_text("")
 
     config = Config.from_yaml(config_file)
-    # Should use defaults
-    assert "credit_card" in config.policies
+    # Should have empty policies
+    assert config.policies == {}
 
 
 def test_config_get_policy():
     """Test getting policy for a PII type."""
     config = Config()
+    # No default policies, so should return None
+    policy = config.get_policy("email")
+    assert policy is None
+
+    # Add a policy explicitly
+    config.policies["email"] = Policy(action="mask", enabled=True)
     policy = config.get_policy("email")
     assert policy is not None
     assert isinstance(policy, Policy)
@@ -78,8 +74,61 @@ def test_config_get_policy():
     assert policy is None
 
 
+def test_config_get_policy_with_default():
+    """Test getting policy with default_policy set."""
+    config = Config()
+    # Set a default policy
+    config.default_policy = Policy(action="mask", enabled=True)
+
+    # Get policy for a type that doesn't have explicit policy
+    policy = config.get_policy("email")
+    assert policy is not None
+    assert policy == config.default_policy
+    assert policy.action == "mask"
+
+    # Explicit policy should override default
+    config.policies["email"] = Policy(action="block", enabled=True)
+    policy = config.get_policy("email")
+    assert policy is not None
+    assert policy.action == "block"
+    assert policy != config.default_policy
+
+
+def test_config_default_policy_from_dict():
+    """Test default_policy loaded from dict."""
+    config_dict = {
+        "default_policy": {"action": "mask", "enabled": True},
+        "policies": {
+            "email": {"action": "block", "enabled": True},
+        },
+    }
+    config = Config.from_dict(config_dict)
+    assert config.default_policy is not None
+    assert config.default_policy.action == "mask"
+    # Explicit policy should still work
+    assert config.policies["email"].action == "block"
+
+
+def test_config_default_policy_from_yaml(tmp_path):
+    """Test default_policy loaded from YAML."""
+    config_file = tmp_path / "config.yaml"
+    config_data = {
+        "default_policy": {"action": "observe", "enabled": True},
+        "policies": {
+            "email": {"action": "block", "enabled": True},
+        },
+    }
+    config_file.write_text(yaml.dump(config_data))
+
+    config = Config.from_yaml(config_file)
+    assert config.default_policy is not None
+    assert config.default_policy.action == "observe"
+    # Explicit policy should still work
+    assert config.policies["email"].action == "block"
+
+
 def test_config_merge_policies_with_defaults():
-    """Test that user policies merge with defaults."""
+    """Test that user policies are set correctly."""
     config = Config.from_dict(
         {
             "policies": {
@@ -87,10 +136,9 @@ def test_config_merge_policies_with_defaults():
             }
         }
     )
-    # Should have both user policy and defaults
+    # Should have only the user policy
     assert config.policies["email"].action == "block"
-    assert config.policies["credit_card"].action == "block"  # default
-    assert config.policies["ssn"].action == "block"  # default
+    assert len(config.policies) == 1
 
 
 def test_config_audit_log_path_from_env(monkeypatch):
@@ -118,8 +166,8 @@ def test_config_mode_from_yaml(tmp_path):
 
 def test_config_mode_from_dict():
     """Test mode configuration from dict."""
-    config = Config.from_dict({"mode": "warn"})
-    assert config.mode == "warn"
+    config = Config.from_dict({"mode": "observe"})
+    assert config.mode == "observe"
 
 
 def test_config_mode_env_var(monkeypatch):
@@ -130,12 +178,14 @@ def test_config_mode_env_var(monkeypatch):
 
 
 def test_config_new_pii_types_defaults():
-    """Test that new PII types have default policies."""
+    """Test that new PII types don't have default policies."""
     config = Config()
-    assert "pem_key" in config.policies
-    assert "jwt_token" in config.policies
-    assert config.policies["pem_key"].action == "block"
-    assert config.policies["jwt_token"].action == "block"
+    # No default policies
+    assert "pem_key" not in config.policies
+    assert "jwt_token" not in config.policies
+    # get_policy should return None
+    assert config.get_policy("pem_key") is None
+    assert config.get_policy("jwt_token") is None
 
 
 def test_policy_model():

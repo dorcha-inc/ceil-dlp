@@ -4,11 +4,19 @@
 
 # Mode: Controls how ceil-dlp handles detected sensitive data
 # - observe: Log detections but don't block or mask (useful for testing)
-# - warn: Log and warn, but don't block or mask
-# - enforce: Actually block or mask based on policy actions (default)
+# - enforce: Block and mask based on policy actions (default)
+#   To mask without blocking, set policies to action: "mask" instead of "block"
 mode: enforce
 
+# Default Policy (optional): Apply to all PII types that don't have explicit policies
+# If not specified, PII types without explicit policies are treated as "observe"
+# Uncomment to mask all detected PII by default:
+# default_policy:
+#   action: mask  # block | mask
+#   enabled: true
+
 # Policies: Define how each PII type is handled
+# Explicit policies override default_policy
 policies:
   # High-risk items - block by default (recommended)
   credit_card:
@@ -115,6 +123,21 @@ policies:
 # If not specified, uses CEIL_DLP_AUDIT_LOG environment variable
 # If neither is set, audit logging is disabled
 # audit_log_path: /var/log/ceil-dlp/audit.log
+
+# OCR Strength (optional)
+# Controls how many OCR models to use in the ensemble for image redaction
+# - 1: Use only light docTR OCR (fastest, good for simple documents)
+# - 2: Use light docTR + Tesseract OCR (balanced speed/accuracy)
+# - 3: Use all three models including heavy docTR (slowest, most accurate, default)
+# ocr_strength: 3
+
+# NER Strength (optional)
+# Controls which NER model to use for person name and entity detection
+# - 1: Use en_core_web_lg (fastest, good accuracy)
+# - 2: Use spaCy + transformer ensemble (balanced speed/accuracy)
+# - 3: Use spaCy + transformer + GLiNER ensemble (best coverage, slower, default)
+# Higher values improve person name detection but are slower
+# ner_strength: 3
 
 # PII types to detect (optional)
 # If specified, only these types will be detected

@@ -50,13 +50,20 @@ dependencies = [
     "python-json-logger>=2.0.0",
     "spacy>=3.7.0",
     "typer>=0.9.0",
-    "pip>=24.0",                       # Ensure pip is available for spacy model downloads
-    "pypdfium2>=4.0.0",                # PDF text/image extraction and manipulation
+    "pip>=24.0",
+    "pypdfium2>=4.0.0",                   # PDF text/image extraction and manipulation
+    "python-doctr>=0.7.0",                # OCR engine for better accuracy on complex documents
+    "spacy-huggingface-pipelines>=0.0.1", # Required for transformer-based NER models
+    "transformers>=4.20.0",               # Required for transformer-based NER models
+    "gliner>=0.2.0",                      # Required for GLiNER-based NER (ner_strength=3)
+    # spaCy models - required for NER detection
+    # These are installed as direct URL dependencies (not on PyPI, distributed via GitHub releases)
+    "en_core_web_lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl",
+    "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "black>=23.0.0",
     "mypy>=1.0.0",
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
@@ -78,10 +85,6 @@ include = ["ceil_dlp*"]
 [project.scripts]
 ceil-dlp = "ceil_dlp.cli:main"
 
-[tool.black]
-line-length = 100
-target-version = ["py311", "py312"]
-
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -99,7 +102,7 @@ select = [
     "SIM", # flake8-simplify
 ]
 ignore = [
-    "E501",   # line too long (handled by black)
+    "E501",   # line too long (handled by ruff format)
     "B008",   # do not perform function calls in argument defaults
     "ARG001", # unused function argument (for interface compatibility)
 ]
@@ -127,7 +130,14 @@ module = "litellm.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["PIL.*", "presidio_image_redactor.*", "pypdfium2.*"]
+module = [
+    "PIL.*",
+    "presidio_image_redactor.*",
+    "pypdfium2.*",
+    "doctr.*",
+    "doctr.io.*",
+    "doctr.models.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -143,4 +153,8 @@ filterwarnings = [
     "ignore:builtin type SwigPyPacked:DeprecationWarning",
     "ignore:builtin type SwigPyObject:DeprecationWarning",
     "ignore:builtin type swigvarlink:DeprecationWarning",
+    # Suppress HuggingFace Hub resume_download deprecation (external library issue)
+    "ignore:`resume_download` is deprecated:FutureWarning:huggingface_hub",
+    # Suppress Transformers sentencepiece tokenizer conversion warning (external library issue)
+    "ignore:The sentencepiece tokenizer:UserWarning:transformers",
 ]

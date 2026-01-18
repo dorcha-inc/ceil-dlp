@@ -8,7 +8,7 @@ import pypdfium2 as pdfium
 
 from ceil_dlp.detectors.image_detector import detect_pii_in_image
 from ceil_dlp.detectors.patterns import PatternMatch
-from ceil_dlp.detectors.pii_detector import PIIDetector
+from ceil_dlp.detectors.text_detector import detect_pii_in_text
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,6 @@ def detect_pii_in_pdf(
             return {}
 
         results: dict[str, list[PatternMatch]] = {}
-        detector = PIIDetector(enabled_types=enabled_types)
 
         # Process each page
         for page_num in range(len(pdf)):
@@ -52,10 +51,10 @@ def detect_pii_in_pdf(
 
                 # First, extract text from page
                 textpage = page.get_textpage()
-                page_text = textpage.get_text_range()
+                page_text = textpage.get_text_bounded()
                 if page_text and page_text.strip():
                     # Detect PII in extracted text
-                    text_detections = detector.detect(page_text)
+                    text_detections = detect_pii_in_text(page_text, enabled_types=enabled_types)
                     # Merge results (use page offset to track positions if needed)
                     for pii_type, matches in text_detections.items():
                         if pii_type not in results:

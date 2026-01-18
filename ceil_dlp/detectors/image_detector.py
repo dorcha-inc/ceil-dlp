@@ -1,6 +1,5 @@
 """Image PII detection using Presidio Image Redactor."""
 
-import io
 import logging
 from functools import lru_cache
 from pathlib import Path
@@ -8,17 +7,104 @@ from pathlib import Path
 from PIL import Image
 from presidio_image_redactor import ImageAnalyzerEngine
 
+from ceil_dlp.detectors.doctr_ocr import get_doctr_heavy_ocr_engine, get_doctr_ocr_engine
 from ceil_dlp.detectors.patterns import PatternMatch
 from ceil_dlp.detectors.presidio_adapter import PRESIDIO_TO_PII_TYPE, get_analyzer
+from ceil_dlp.utils import image_to_pil_image
 
 logger = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=1)
-def _get_image_analyzer() -> ImageAnalyzerEngine:
-    """Get cached ImageAnalyzerEngine instance to avoid expensive re-initialization."""
-    analyzer = get_analyzer()
+@lru_cache(maxsize=3)  # Cache up to 3 analyzers (one per strength level: 1, 2, or 3)
+def get_image_analyzer(ner_strength: int = 1) -> ImageAnalyzerEngine:
+    """
+    Get cached ImageAnalyzerEngine instance with docTR OCR engine.
+
+    Uses lighter docTR models since we use ensemble with Tesseract.
+
+    Args:
+        ner_strength: NER model strength:
+                     - 1: en_core_web_lg (spaCy)
+                     - 2: transformer-based NER (dslim/bert-base-NER)
+                     - 3: GLiNER zero-shot NER (best for long texts and hyphenated names)
+                     Defaults to 1 for backward compatibility.
+
+    Returns:
+        ImageAnalyzerEngine configured with the specified NER model strength.
+
+    Raises:
+        ValueError: If ner_strength is not 1, 2, or 3.
+    """
+    if ner_strength not in (1, 2, 3):
+        raise ValueError(
+            f"ner_strength must be 1, 2, or 3, got {ner_strength}. "
+            "Use 1 for en_core_web_lg, 2 for transformer-based NER, or 3 for GLiNER."
+        )
+    analyzer = get_analyzer(ner_strength=ner_strength)
+    # Use docTR OCR engine (lighter model for ensemble approach)
+    ocr_engine = get_doctr_ocr_engine()
+    return ImageAnalyzerEngine(analyzer_engine=analyzer, ocr=ocr_engine)
+
+
+@lru_cache(maxsize=3)  # Cache up to 3 analyzers (one per strength level: 1, 2, or 3)
+def get_tesseract_image_analyzer(ner_strength: int = 1) -> ImageAnalyzerEngine:
+    """
+    Get cached ImageAnalyzerEngine instance with Tesseract OCR engine.
+
+    Used for ensemble approach: Tesseract redaction on docTR-redacted images.
+
+    Args:
+        ner_strength: NER model strength:
+                     - 1: en_core_web_lg (spaCy)
+                     - 2: transformer-based NER (dslim/bert-base-NER)
+                     - 3: GLiNER zero-shot NER (best for long texts and hyphenated names)
+                     Defaults to 1 for backward compatibility.
+
+    Returns:
+        ImageAnalyzerEngine configured with the specified NER model strength.
+
+    Raises:
+        ValueError: If ner_strength is not 1, 2, or 3.
+    """
+    if ner_strength not in (1, 2, 3):
+        raise ValueError(
+            f"ner_strength must be 1, 2, or 3, got {ner_strength}. "
+            "Use 1 for en_core_web_lg, 2 for transformer-based NER, or 3 for GLiNER."
+        )
+    analyzer = get_analyzer(ner_strength=ner_strength)
+    # Use default Tesseract OCR (no custom OCR engine = uses Tesseract)
     return ImageAnalyzerEngine(analyzer_engine=analyzer)
+
+
+@lru_cache(maxsize=3)  # Cache up to 3 analyzers (one per strength level: 1, 2, or 3)
+def get_doctr_heavy_image_analyzer(ner_strength: int = 1) -> ImageAnalyzerEngine:
+    """
+    Get cached ImageAnalyzerEngine instance with heavy docTR OCR engine.
+
+    Used for ensemble approach: Heavy docTR redaction as third pass for maximum accuracy.
+
+    Args:
+        ner_strength: NER model strength:
+                     - 1: en_core_web_lg (spaCy)
+                     - 2: transformer-based NER (dslim/bert-base-NER)
+                     - 3: GLiNER zero-shot NER (best for long texts and hyphenated names)
+                     Defaults to 1 for backward compatibility.
+
+    Returns:
+        ImageAnalyzerEngine configured with the specified NER model strength.
+
+    Raises:
+        ValueError: If ner_strength is not 1, 2, or 3.
+    """
+    if ner_strength not in (1, 2, 3):
+        raise ValueError(
+            f"ner_strength must be 1, 2, or 3, got {ner_strength}. "
+            "Use 1 for en_core_web_lg, 2 for transformer-based NER, or 3 for GLiNER."
+        )
+    analyzer = get_analyzer(ner_strength=ner_strength)
+    # Use heavier docTR OCR engine for third pass
+    ocr_engine = get_doctr_heavy_ocr_engine()
+    return ImageAnalyzerEngine(analyzer_engine=analyzer, ocr=ocr_engine)
 
 
 def detect_pii_in_image(
@@ -42,21 +128,12 @@ def detect_pii_in_image(
     """
     try:
         # Load image
-        if isinstance(image_data, Image.Image):
-            # Already a PIL Image, use it directly
-            image = image_data
-        elif isinstance(image_data, (str, Path)):
-            image = Image.open(image_data)
-        elif isinstance(image_data, bytes):
-            image = Image.open(io.BytesIO(image_data))
-        else:
-            logger.error(f"Invalid image_data type: {type(image_data)}")
-            return {}
+        image = image_to_pil_image(image_data)
 
-        # Use Presidio Image Redactor with our configured analyzer (smaller model)
+        # Use Presidio Image Redactor with our configured analyzer
         # This performs OCR and PII detection in one step
-        # Use cached image analyzer to avoid expensive re-initialization
-        image_analyzer = _get_image_analyzer()
+        image_analyzer = get_image_analyzer()
+
         analyzer_results = image_analyzer.analyze(
             image=image,
             language="en",

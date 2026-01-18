@@ -33,7 +33,7 @@ When using ceil-dlp:
 - Review and validate your `ceil-dlp.yaml` configuration file
 - Use appropriate file permissions for configuration files
 - Monitor audit logs for suspicious activity
-- Use appropriate operational modes (observe, warn, enforce) based on your environment
+- Use appropriate operational modes (observe, enforce) based on your environment
 - Regularly review and update PII detection policies
 - Ensure Tesseract OCR is kept up to date if using image detection
 

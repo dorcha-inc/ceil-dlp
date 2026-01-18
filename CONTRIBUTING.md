@@ -74,7 +74,7 @@ make install-dev
 ```
 
 The pre-commit hooks will:
-- Format code with `ruff` and `black`
+- Format code with `ruff`
 - Run linting (`ruff check`)
 - Run type checking (`mypy`)
 - Run tests (`make test`)

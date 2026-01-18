@@ -18,65 +18,44 @@ class ModelRules(BaseModel):
 class Policy(BaseModel):
     """Represents a DLP policy for a PII type."""
 
-    action: Literal["block", "mask"]
-    enabled: bool = True
+    action: Literal["block", "mask", "observe"]
+    enabled: bool = Field(
+        default=True, description="Whether to apply this policy. If False, the policy is ignored."
+    )
     models: ModelRules | None = None  # If None, apply to all models
 
 
 class Config(BaseModel):
     """Configuration for ceil-dlp."""
 
-    # Default policies - high-risk items block, medium-risk mask
-    _DEFAULT_POLICIES: dict[str, dict[str, str | bool]] = {
-        "credit_card": {"action": "block", "enabled": True},
-        "ssn": {"action": "block", "enabled": True},
-        "api_key": {"action": "block", "enabled": True},
-        "pem_key": {"action": "block", "enabled": True},
-        "jwt_token": {"action": "block", "enabled": True},
-        "email": {"action": "mask", "enabled": True},
-        "phone": {"action": "mask", "enabled": True},
-    }
-
-    policies: dict[str, Policy] = Field(
-        default_factory=lambda: {
-            k: Policy(
-                action=v["action"],  # type: ignore[arg-type]
-                enabled=bool(v["enabled"]),
-            )
-            for k, v in {
-                "credit_card": {"action": "block", "enabled": True},
-                "ssn": {"action": "block", "enabled": True},
-                "api_key": {"action": "block", "enabled": True},
-                "pem_key": {"action": "block", "enabled": True},
-                "jwt_token": {"action": "block", "enabled": True},
-                "email": {"action": "mask", "enabled": True},
-                "phone": {"action": "mask", "enabled": True},
-            }.items()
-        }
-    )
+    policies: dict[str, Policy] = Field(default_factory=dict)
     audit_log_path: str | None = Field(default_factory=lambda: os.getenv("CEIL_DLP_AUDIT_LOG"))
     enabled_pii_types: list[str] = Field(default_factory=list)
-    mode: Literal["observe", "warn", "enforce"] = Field(default="enforce")
+    mode: Literal["observe", "enforce"] = Field(default="enforce")
+    default_policy: Policy | None = Field(
+        default=None,
+        description="Default policy to apply to any PII type that doesn't have an explicit policy. "
+        "If None, defaults to masking all detected PII.",
+    )
+    ocr_strength: int = Field(
+        default=3,
+        ge=1,
+        le=3,
+        description="Number of OCR models to use in ensemble (1=light docTR only, 2=light docTR+Tesseract, 3=all three including heavy docTR).",
+    )
+    ner_strength: int = Field(
+        default=3,
+        ge=1,
+        le=3,
+        description="NER model strength: 1=en_core_web_lg (fastest), 2=spaCy+transformer ensemble (balanced), 3=spaCy+transformer+GLiNER ensemble (best coverage, slower). Default is 3.",
+    )
 
     @model_validator(mode="after")
-    def merge_policies_with_defaults(self) -> "Config":
-        """Merge user-provided policies with defaults."""
-        # Always start with defaults, then update with user-provided policies
-        defaults = {
-            k: Policy(
-                action=v["action"],  # type: ignore[arg-type]
-                enabled=bool(v["enabled"]),
-            )
-            for k, v in self._DEFAULT_POLICIES.items()
-        }
-        defaults.update(self.policies)
-        self.policies = defaults
-
-        # Override mode from environment variable if set
+    def override_mode_from_env(self) -> "Config":
+        """Override mode from environment variable if set."""
         env_mode = os.getenv("CEIL_DLP_MODE")
-        if env_mode and env_mode in ("observe", "warn", "enforce"):
+        if env_mode and env_mode in ("observe", "enforce"):
             self.mode = env_mode  # type: ignore[assignment]
-
         return self
 
     @classmethod
@@ -108,5 +87,13 @@ class Config(BaseModel):
         return cls.model_validate(config_dict)
 
     def get_policy(self, pii_type: str) -> Policy | None:
-        """Get policy for a PII type."""
-        return self.policies.get(pii_type)
+        """Get policy for a PII type.
+
+        Returns explicit policy if it exists, otherwise returns default_policy.
+        If default_policy is None, returns None (no default policies).
+        """
+        explicit_policy = self.policies.get(pii_type)
+        if explicit_policy is not None:
+            return explicit_policy
+        # Return default_policy if set, otherwise None
+        return self.default_policy

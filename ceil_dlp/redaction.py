@@ -3,22 +3,66 @@
 import io
 import logging
 from pathlib import Path
+from typing import cast
 
 import pypdfium2 as pdfium
 from PIL import Image
-from presidio_image_redactor import ImageAnalyzerEngine, ImageRedactorEngine
+from presidio_image_redactor import ImageRedactorEngine
 
+from ceil_dlp.detectors.image_detector import (
+    get_doctr_heavy_image_analyzer,
+    get_image_analyzer,
+    get_tesseract_image_analyzer,
+)
 from ceil_dlp.detectors.pdf_detector import detect_pii_in_pdf
-from ceil_dlp.detectors.presidio_adapter import get_analyzer
+from ceil_dlp.detectors.presidio_adapter import get_pii_type_to_entities
+from ceil_dlp.utils import image_to_pil_image
 
 logger = logging.getLogger(__name__)
 
 
-def apply_redaction(
+def _redact_with_ocr_engine(
+    image: Image.Image,
+    ocr_type: int,
+    ner_strength: int,
+    entities_to_redact: list[str] | None,
+) -> Image.Image:
+    """Helper function to redact an image with a specific OCR engine and NER strength.
+
+    Args:
+        image: Image to redact
+        ocr_type: OCR engine type (1=docTR, 2=tesseract, 3=heavy docTR)
+        ner_strength: NER model strength (1, 2, or 3)
+        entities_to_redact: List of Presidio entity types to redact
+
+    Returns:
+        Redacted image
+    """
+    if ocr_type == 1:
+        analyzer = get_image_analyzer(ner_strength=ner_strength)
+    elif ocr_type == 2:
+        analyzer = get_tesseract_image_analyzer(ner_strength=ner_strength)
+    elif ocr_type == 3:
+        analyzer = get_doctr_heavy_image_analyzer(ner_strength=ner_strength)
+    else:
+        raise ValueError(f"Invalid ocr_type: {ocr_type}. Must be 1, 2, or 3.")
+
+    engine = ImageRedactorEngine(image_analyzer_engine=analyzer)
+    return cast(
+        Image.Image,
+        engine.redact(
+            image,  # pyright: ignore[reportArgumentType]
+            fill=(0, 0, 0),
+            entities=entities_to_redact if entities_to_redact else None,
+        ),
+    )
+
+
+def _apply_redaction_to_text(
     text: str, detections: dict[str, list[tuple[str, int, int]]]
 ) -> tuple[str, dict[str, list[str]]]:
     """
-    Apply redaction/masking to text based on detected PII.
+    Internal helper: Apply redaction/masking to text based on detected PII.
 
     Args:
         text: Original text
@@ -57,79 +101,147 @@ def apply_redaction(
     return redacted_text, redacted_items
 
 
+def redact_text(
+    text: str,
+    detections: dict[str, list[tuple[str, int, int]]] | None = None,
+    ner_strength: int | None = None,
+    enabled_types: set[str] | None = None,
+) -> tuple[str, dict[str, list[str]]]:
+    """
+    Redact PII in text using NER ensemble approach if enabled.
+
+    If detections are provided, uses them directly. Otherwise, detects PII first.
+    If ner_strength=2 or 3, uses ensemble: detects with multiple NER models,
+    then merges results for maximum coverage.
+
+    Args:
+        text: Original text to redact
+        detections: Optional pre-detected PII. If None, will detect PII first.
+        ner_strength: NER model strength:
+                     - 1: en_core_web_lg only (fastest)
+                     - 2: spaCy + transformer ensemble (balanced)
+                     - 3: spaCy + transformer + GLiNER ensemble (best coverage, slower)
+                     Defaults to 3 if not specified. Only used if detections is None.
+        enabled_types: Optional set of PII types to detect. Only used if detections is None.
+
+    Returns:
+        Tuple of (redacted_text, redacted_items) where redacted_items maps
+        PII type to list of redacted values
+    """
+    from ceil_dlp.detectors.presidio_adapter import detect_with_presidio_ensemble
+
+    # If detections are provided, use them directly (backward compatibility)
+    if detections is not None:
+        return _apply_redaction_to_text(text, detections)
+
+    # Otherwise, detect PII first using ensemble detection
+    ner_strength_val = ner_strength if ner_strength is not None else 3
+    detections = detect_with_presidio_ensemble(
+        text, ner_strength=ner_strength_val, enabled_types=enabled_types
+    )
+
+    return _apply_redaction_to_text(text, detections)
+
+
 def redact_image(
-    image_data: bytes | str | Path | Image.Image, pii_types: list[str] | None = None
+    image_data: bytes | str | Path | Image.Image,
+    pii_types: list[str] | None = None,
+    ocr_strength: int = 1,
+    ner_strength: int = 1,
 ) -> bytes:
     """
-    Redact PII in an image using Presidio Image Redactor.
+    Redact PII in an image using ensemble approach for both OCR and NER.
+
+    OCR Ensemble (sequential):
+    1. Redact with docTR OCR (lighter model, good for complex documents)
+    2. Redact again with Tesseract OCR on the docTR-redacted image
+    3. Redact again with heavy docTR OCR (heavier model, maximum accuracy) on the result
+    This catches PII that any single OCR engine might miss.
+
+    NER Ensemble (if ner_strength=2):
+    - First pass: Run all OCR passes with spaCy NER (strength 1)
+    - Second pass: Run all OCR passes again with transformer NER (strength 2) on already-redacted image
+    This catches names that either NER model might miss (e.g., "JANE MARIA" might be caught by spaCy but not transformer).
 
     Args:
         image_data: Image as bytes, file path (str), Path object, or PIL Image
         pii_types: Optional list of PII types to redact. If None, redacts all detected PII.
+        ocr_strength: Number of OCR models to use (1=light docTR only, 2=light docTR+Tesseract, 3=all three).
+                     Defaults to 3 if not specified.
+        ner_strength: NER model strength:
+                     - 1: en_core_web_lg only (fastest)
+                     - 2: spaCy + transformer ensemble (balanced)
+                     - 3: spaCy + transformer + GLiNER ensemble (best coverage, slower)
+                     Defaults to 3 if not specified (uses full ensemble for best accuracy).
 
     Returns:
         Redacted image as bytes (same format as input)
     """
-    try:
-        # Load image
-        image: Image.Image
-        if isinstance(image_data, Image.Image):
-            # Already a PIL Image, use it directly
-            image = image_data
-            original_format = image.format
-        elif isinstance(image_data, (str, Path)):
-            image = Image.open(image_data)
-            original_format = image.format
-        elif isinstance(image_data, bytes):
-            image = Image.open(io.BytesIO(image_data))
-            original_format = image.format
-        else:
-            raise ValueError(f"Invalid image_data type: {type(image_data)}")
-
-        # Use Presidio Image Redactor with our configured analyzer
-        # All custom secret recognizers are already registered in the analyzer,
-        # so we don't need to pass them as ad_hoc_recognizers
-        analyzer = get_analyzer()
-        image_analyzer = ImageAnalyzerEngine(analyzer_engine=analyzer)
-        engine = ImageRedactorEngine(image_analyzer_engine=image_analyzer)
-
-        # Redact the image (handles both Presidio PII and custom secrets)
-        # The redact method returns a redacted PIL Image
-        # fill parameter expects RGB tuple or int (0-255 for grayscale)
-        # Note: pii_types parameter is ignored - Presidio will detect all types
-        # and filtering would need to happen at the detection stage, not redaction
-        redacted_image_pil = engine.redact(
-            image,  # pyright: ignore[reportArgumentType]
-            fill=(0, 0, 0),
+    if ner_strength not in (1, 2, 3):
+        raise ValueError(
+            f"ner_strength must be 1, 2, or 3, got {ner_strength}. "
+            "Use 1 for en_core_web_lg, 2 for spaCy+transformer ensemble, "
+            "or 3 for spaCy+transformer+GLiNER ensemble."
         )
+
+    if ocr_strength not in (1, 2, 3):
+        raise ValueError(
+            f"ocr_strength must be 1, 2, or 3, got {ocr_strength}. "
+            "Use 1 for light docTR only, 2 for light docTR+Tesseract, "
+            "or 3 for all three including heavy docTR."
+        )
+
+    try:
+        image: Image.Image = image_to_pil_image(image_data)
+        original_format = image.format or "PNG"
+    except Exception as e:
+        logger.error(f"Error converting image to PIL Image: {e}", exc_info=True)
+        raise ValueError(f"Invalid image_data type: {type(image_data)}") from e
+
+    try:
+        # Convert our PII type names to Presidio entity names
+        # Create reverse mapping: pii_type -> list of Presidio entity names
+        pii_type_to_entities = get_pii_type_to_entities()
+
+        entities_to_redact: list[str] = []
+        for pii_type in pii_types if pii_types else []:
+            entities = pii_type_to_entities.get(pii_type)
+            if entities is None:
+                raise ValueError(f"PII type {pii_type} not found in mapping")
+            entities_to_redact.extend(entities)
+
+        # Ensemble approach: For each NER model, run all OCR passes
+        # This catches PII that any single model or OCR engine might miss
+        redacted_image_pil: Image.Image = image
+
+        for ner_model in range(1, ner_strength + 1):
+            for ocr_step in range(1, ocr_strength + 1):
+                redacted_image_pil = _redact_with_ocr_engine(
+                    redacted_image_pil,
+                    ocr_type=ocr_step,
+                    ner_strength=ner_model,
+                    entities_to_redact=entities_to_redact,
+                )
+
+        final_redacted_image_pil: Image.Image = redacted_image_pil
 
         # Convert back to bytes
         output = io.BytesIO()
         # Preserve original format if available, otherwise use PNG
         save_format = original_format or "PNG"
-        redacted_image_pil.save(output, format=save_format)  # type: ignore[attr-defined]
+        final_redacted_image_pil.save(output, format=save_format)
         return output.getvalue()
 
     except Exception as e:
-        logger.error(f"Error redacting image: {e}", exc_info=True)
-
-        # Return original image on error
-        if isinstance(image_data, Image.Image):
-            # Convert PIL Image to bytes
-            output = io.BytesIO()
-            original_format = image_data.format or "PNG"
-            image_data.save(output, format=original_format)
-            return output.getvalue()
-        elif isinstance(image_data, bytes):
-            return image_data
-        elif isinstance(image_data, (str, Path)):
-            with open(image_data, "rb") as f:
-                return f.read()
-        else:
-            raise ValueError(f"Invalid image_data type: {type(image_data)}") from e
+        raise ValueError(f"Error redacting image: {e}") from e
 
 
-def redact_pdf(pdf_data: bytes | str | Path, pii_types: list[str] | None = None) -> bytes:
+def redact_pdf(
+    pdf_data: bytes | str | Path,
+    pii_types: list[str] | None = None,
+    ocr_strength: int = 1,
+    ner_strength: int = 1,
+) -> bytes:
     """
     Redact PII in a PDF by overlaying black rectangles over detected PII areas.
 
@@ -142,6 +254,10 @@ def redact_pdf(pdf_data: bytes | str | Path, pii_types: list[str] | None = None)
     Args:
         pdf_data: PDF as bytes, file path (str), or Path object
         pii_types: Optional list of PII types to redact. If None, redacts all detected PII.
+        ocr_strength: Number of OCR models to use (1=light docTR only, 2=light docTR+Tesseract, 3=all three).
+                     Defaults to 3 if not specified.
+        ner_strength: NER model strength (1=en_core_web_lg, 2=en_core_web_trf, 3=transformer-based).
+                     Defaults to 1 if not specified.
 
     Returns:
         Redacted PDF as bytes
@@ -189,7 +305,12 @@ def redact_pdf(pdf_data: bytes | str | Path, pii_types: list[str] | None = None)
                 pil_image = bitmap.to_pil()
 
                 # Redact PII in the rendered page image using Presidio
-                redacted_image_bytes = redact_image(pil_image, pii_types=pii_types)
+                redacted_image_bytes = redact_image(
+                    pil_image,
+                    pii_types=pii_types,
+                    ocr_strength=ocr_strength,
+                    ner_strength=ner_strength,
+                )
                 redacted_image = Image.open(io.BytesIO(redacted_image_bytes))
 
                 redacted_pages.append(redacted_image)

@@ -1,0 +1,10 @@
+mode: enforce
+
+default_policy:
+  action: observe
+  enabled: true
+
+policies:
+  api_key:
+    action: mask
+    enabled: true

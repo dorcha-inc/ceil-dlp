@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from ceil_dlp.config import Config
+from ceil_dlp.config import Config, Policy
 from ceil_dlp.middleware import CeilDLPHandler
 
 
@@ -13,7 +13,8 @@ def test_middleware_init_default_config():
     """Test middleware initialization with default config."""
     handler = CeilDLPHandler()
     assert handler.config is not None
-    assert handler.detector is not None
+    # enabled_types can be None if config.enabled_pii_types is empty list
+    assert handler.enabled_types is None or isinstance(handler.enabled_types, set)
     assert handler.audit_logger is not None
 
 
@@ -94,7 +95,11 @@ async def test_middleware_pre_call_hook_no_pii():
 @pytest.mark.asyncio
 async def test_middleware_pre_call_hook_blocked_pii():
     """Test pre-call hook blocking high-risk PII."""
-    handler = CeilDLPHandler()
+    config = Config()
+    # Set policies for types that might be detected (credit_card or us_driver_license)
+    config.policies["credit_card"] = Policy(action="block", enabled=True)
+    config.policies["us_driver_license"] = Policy(action="block", enabled=True)
+    handler = CeilDLPHandler(config=config)
     messages = [{"role": "user", "content": "My credit card is 4111111111111111"}]
     data = {
         "model": "gpt-4",
@@ -115,7 +120,10 @@ async def test_middleware_pre_call_hook_blocked_pii():
 @pytest.mark.asyncio
 async def test_middleware_pre_call_hook_masked_pii():
     """Test pre-call hook masking medium-risk PII."""
-    handler = CeilDLPHandler()
+    config = Config()
+    # Set policy for email to mask it
+    config.policies["email"] = Policy(action="mask", enabled=True)
+    handler = CeilDLPHandler(config=config)
     messages = [{"role": "user", "content": "My email is john@example.com"}]
     data = {
         "model": "gpt-4",
@@ -172,7 +180,7 @@ async def test_middleware_pre_call_hook_empty_text():
 async def test_middleware_pre_call_hook_disabled_policy():
     """Test pre-call hook with disabled policy."""
     config = Config()
-    config.policies["email"].enabled = False
+    config.policies["email"] = Policy(action="mask", enabled=False)
     handler = CeilDLPHandler(config=config)
     messages = [{"role": "user", "content": "My email is john@example.com"}]
     data = {"model": "gpt-4", "messages": messages, "litellm_call_id": "test123"}
@@ -332,9 +340,8 @@ def test_middleware_create_handler_with_kwargs():
     handler = create_handler(policies={"custom_type": {"action": "block", "enabled": True}})
     # Custom policy should be present
     assert handler.config.policies["custom_type"].action == "block"
-    # Defaults should still be present
-    assert "credit_card" in handler.config.policies
-    assert "email" in handler.config.policies
+    # Only the custom policy should be present (no defaults)
+    assert len(handler.config.policies) == 1
 
 
 def test_middleware_extract_text_string_message():
@@ -373,51 +380,12 @@ async def test_middleware_mode_observe():
 
 
 @pytest.mark.asyncio
-async def test_middleware_mode_warn():
-    """Test warn mode: mask but never block, add warning header."""
-    config = Config(mode="warn")
-    handler = CeilDLPHandler(config=config)
-    messages = [{"role": "user", "content": "My email is john@example.com"}]
-    data = {"model": "gpt-4", "messages": messages, "litellm_call_id": "test123"}
-
-    result = await handler.async_pre_call_hook(
-        user_api_key_dict=None,
-        cache=None,
-        data=data,
-        call_type="completion",
-    )
-    # Should not block in warn mode
-    assert isinstance(result, dict)
-    # Should have warning header
-    assert "extra_headers" in result
-    assert result["extra_headers"]["X-Ceil-DLP-Warning"] == "violations_detected"
-
-
-@pytest.mark.asyncio
-async def test_middleware_mode_warn_blocked_type():
-    """Test warn mode with blocked type: log warning but don't block."""
-    config = Config(mode="warn")
-    handler = CeilDLPHandler(config=config)
-    messages = [{"role": "user", "content": "My credit card is 4111111111111111"}]
-    data = {"model": "gpt-4", "messages": messages, "litellm_call_id": "test123"}
-
-    result = await handler.async_pre_call_hook(
-        user_api_key_dict=None,
-        cache=None,
-        data=data,
-        call_type="completion",
-    )
-    # Should not block even for blocked types in warn mode
-    assert isinstance(result, dict)
-    # Should have warning header
-    assert "extra_headers" in result
-    assert result["extra_headers"]["X-Ceil-DLP-Warning"] == "violations_detected"
-
-
-@pytest.mark.asyncio
 async def test_middleware_mode_enforce():
     """Test enforce mode: block and mask according to policies."""
     config = Config(mode="enforce")
+    # Set policies for types that might be detected (credit_card or us_driver_license)
+    config.policies["credit_card"] = Policy(action="block", enabled=True)
+    config.policies["us_driver_license"] = Policy(action="block", enabled=True)
     handler = CeilDLPHandler(config=config)
     messages = [{"role": "user", "content": "My credit card is 4111111111111111"}]
     data = {"model": "gpt-4", "messages": messages, "litellm_call_id": "test123"}
@@ -445,8 +413,8 @@ def test_middleware_mode_config_from_yaml(tmp_path):
 
 def test_middleware_mode_config_from_dict():
     """Test mode configuration from dict."""
-    config = Config.from_dict({"mode": "warn"})
-    assert config.mode == "warn"
+    config = Config.from_dict({"mode": "observe"})
+    assert config.mode == "observe"
 
 
 def test_middleware_mode_config_default():
@@ -598,7 +566,10 @@ async def test_middleware_model_aware_policy_both_lists():
 async def test_middleware_model_aware_policy_no_models_field():
     """Test policy without models field - should apply to all models (backward compatible)."""
     config = Config()
-    # Default policy has no models field
+    # Policy has no models field, should apply to all models
+    # Set policies for types that might be detected (credit_card or us_driver_license)
+    config.policies["credit_card"] = Policy(action="block", enabled=True)
+    config.policies["us_driver_license"] = Policy(action="block", enabled=True)
     handler = CeilDLPHandler(config=config)
     messages = [{"role": "user", "content": "My credit card is 4111111111111111"}]
 
@@ -722,7 +693,10 @@ async def test_middleware_image_redaction_in_messages():
 
     # Mock image detection to return email PII
     with (
-        patch.object(handler.detector, "detect", return_value={}),
+        patch(
+            "ceil_dlp.middleware.detect_pii_in_text",
+            return_value={},
+        ),
         patch(
             "ceil_dlp.middleware.detect_pii_in_image",
             return_value={"email": [("[email_detected_in_image]", 0, 1)]},
@@ -913,7 +887,11 @@ async def test_middleware_pre_call_hook_with_image_pii():
 
     from ceil_dlp.utils import create_image_with_text
 
-    handler = CeilDLPHandler()
+    # Set policy for email to mask it
+    config = Config()
+    config.policies["email"] = Policy(action="mask", enabled=True)
+    handler = CeilDLPHandler(config=config)
+
     # Create image with email
     image_bytes = create_image_with_text("Contact: john@example.com")
     image_base64 = base64.b64encode(image_bytes).decode("utf-8")
@@ -952,7 +930,7 @@ async def test_middleware_pre_call_hook_with_image_pii():
                 call_type="completion",
             )
 
-            # Should mask email (default policy is mask for email)
+            # Should mask email
             assert isinstance(result, dict)
             # Image should be redacted in the result
             result_messages = result.get("messages", [])
@@ -973,7 +951,7 @@ async def test_middleware_pre_call_hook_image_blocked():
 
     # Configure to block credit cards
     config = Config()
-    config.policies["credit_card"].action = "block"
+    config.policies["credit_card"] = Policy(action="block", enabled=True)
     handler = CeilDLPHandler(config=config)
 
     image_bytes = create_image_with_text("Card: 4111111111111111")
@@ -1009,3 +987,499 @@ async def test_middleware_pre_call_hook_image_blocked():
         assert isinstance(result, str)
         assert "blocked" in result.lower()
         assert "credit_card" in result.lower()
+
+
+def test_middleware_extract_pdfs_from_messages():
+    """Test PDF extraction from LiteLLM messages."""
+    import base64
+
+    from ceil_dlp.utils import create_pdf_with_text
+
+    handler = CeilDLPHandler()
+    # Create a real PDF with text
+    pdf_bytes = create_pdf_with_text("Test PDF content")
+    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {"url": f"data:application/pdf;base64,{pdf_base64}"},
+                }
+            ],
+        }
+    ]
+
+    pdfs = handler._extract_pdfs_from_messages(messages)
+    assert len(pdfs) == 1
+    assert pdfs[0] == pdf_bytes
+
+
+def test_middleware_extract_pdfs_from_messages_document_type():
+    """Test PDF extraction with document type."""
+    import base64
+
+    from ceil_dlp.utils import create_pdf_with_text
+
+    handler = CeilDLPHandler()
+    pdf_bytes = create_pdf_with_text("Test PDF content")
+    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "document",
+                    "file": {"url": f"data:application/pdf;base64,{pdf_base64}"},
+                }
+            ],
+        }
+    ]
+
+    pdfs = handler._extract_pdfs_from_messages(messages)
+    assert len(pdfs) == 1
+    assert pdfs[0] == pdf_bytes
+
+
+def test_middleware_extract_pdfs_from_messages_pdf_url():
+    """Test PDF extraction with pdf_url type."""
+    import base64
+
+    from ceil_dlp.utils import create_pdf_with_text
+
+    handler = CeilDLPHandler()
+    pdf_bytes = create_pdf_with_text("Test PDF content")
+    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "pdf_url",
+                    "pdf_url": {"url": f"data:application/pdf;base64,{pdf_base64}"},
+                }
+            ],
+        }
+    ]
+
+    pdfs = handler._extract_pdfs_from_messages(messages)
+    assert len(pdfs) == 1
+    assert pdfs[0] == pdf_bytes
+
+
+def test_middleware_extract_pdfs_from_messages_empty():
+    """Test PDF extraction with no PDFs."""
+    handler = CeilDLPHandler()
+    messages = [{"role": "user", "content": "Hello world"}]
+    pdfs = handler._extract_pdfs_from_messages(messages)
+    assert pdfs == []
+
+
+def test_middleware_extract_pdfs_from_messages_invalid_base64():
+    """Test PDF extraction with invalid base64."""
+    handler = CeilDLPHandler()
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {"url": "data:application/pdf;base64,invalid_base64!!!"},
+                }
+            ],
+        }
+    ]
+
+    pdfs = handler._extract_pdfs_from_messages(messages)
+    # Should handle error gracefully and return empty list
+    assert pdfs == []
+
+
+@pytest.mark.asyncio
+async def test_middleware_pdf_redaction_in_messages():
+    """Test PDF redaction in messages."""
+    import base64
+
+    from ceil_dlp.utils import create_pdf_with_text
+
+    handler = CeilDLPHandler()
+    # Create a real PDF with PII
+    pdf_bytes = create_pdf_with_text("Contact: john@example.com")
+
+    # Create messages with base64-encoded PDF
+    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What's in this PDF?"},
+                {
+                    "type": "file",
+                    "file": {"url": f"data:application/pdf;base64,{pdf_base64}"},
+                },
+            ],
+        }
+    ]
+
+    # Detect PII in the PDF (real detection, no mock)
+    from ceil_dlp.middleware import detect_pii_in_pdf
+
+    detections = detect_pii_in_pdf(pdf_bytes)
+    # Email should be detected in "Contact: john@example.com"
+    assert "email" in detections, "Email should be detected in PDF"
+    pdfs_with_pii = [(pdf_bytes, detections)]
+    pii_types_to_mask = {"email"}
+
+    # Actually redact the PDF (no mock)
+    modified = handler._redact_pdfs_in_messages(messages, pdfs_with_pii, pii_types_to_mask)
+
+    # Check that PDF was replaced
+    assert modified != messages
+    pdf_item = modified[0]["content"][1]
+    assert pdf_item["type"] == "file"
+    # PDF URL should contain redacted base64 (different from original)
+    redacted_url = pdf_item["file"]["url"]
+    assert redacted_url != f"data:application/pdf;base64,{pdf_base64}"
+    # Should still be a valid PDF data URL
+    assert redacted_url.startswith("data:application/pdf;base64,")
+
+
+@pytest.mark.asyncio
+async def test_middleware_pdf_redaction_no_pii_to_mask():
+    """Test PDF redaction when no PII types need masking."""
+    import base64
+
+    from ceil_dlp.utils import create_pdf_with_text
+
+    handler = CeilDLPHandler()
+    pdf_bytes = create_pdf_with_text("Contact: john@example.com")
+    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {"url": f"data:application/pdf;base64,{pdf_base64}"},
+                }
+            ],
+        }
+    ]
+
+    # PDF has PII but it's not in the mask set
+    from ceil_dlp.middleware import detect_pii_in_pdf
+
+    detections = detect_pii_in_pdf(pdf_bytes)
+    assert "email" in detections, "Email should be detected"
+    pdfs_with_pii = [(pdf_bytes, detections)]
+    pii_types_to_mask = {"phone"}  # Different PII type
+
+    modified = handler._redact_pdfs_in_messages(messages, pdfs_with_pii, pii_types_to_mask)
+    # Should return original messages unchanged since email is not in mask set
+    assert modified == messages
+
+
+@pytest.mark.asyncio
+async def test_middleware_pdf_redaction_error_handling():
+    """Test PDF redaction error handling."""
+    import base64
+
+    from ceil_dlp.utils import create_pdf_with_text
+
+    handler = CeilDLPHandler()
+    pdf_bytes = create_pdf_with_text("Contact: john@example.com")
+    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {"url": f"data:application/pdf;base64,{pdf_base64}"},
+                }
+            ],
+        }
+    ]
+
+    from ceil_dlp.middleware import detect_pii_in_pdf
+
+    detections = detect_pii_in_pdf(pdf_bytes)
+    pdfs_with_pii = [(pdf_bytes, detections)]
+    pii_types_to_mask = {"email"}
+
+    # Mock redact_pdf to raise an error
+    with patch("ceil_dlp.middleware.redact_pdf", side_effect=Exception("Redaction failed")):
+        modified = handler._redact_pdfs_in_messages(messages, pdfs_with_pii, pii_types_to_mask)
+        # Should return original messages on error
+        assert modified == messages
+
+
+@pytest.mark.asyncio
+async def test_middleware_pre_call_hook_with_pdf_pii():
+    """Test pre_call_hook with PDF containing PII that should be masked."""
+    import base64
+
+    from ceil_dlp.config import Config, Policy
+
+    # Configure to mask email
+    config = Config()
+    config.policies["email"] = Policy(action="mask", enabled=True)
+    handler = CeilDLPHandler(config=config)
+
+    from ceil_dlp.utils import create_pdf_with_text
+
+    pdf_bytes = create_pdf_with_text("Contact: john@example.com")
+    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {"url": f"data:application/pdf;base64,{pdf_base64}"},
+                }
+            ],
+        }
+    ]
+
+    data = {"model": "gpt-4", "messages": messages, "litellm_call_id": "test123"}
+
+    # Use real PDF detection and redaction (no mocks)
+    with patch("ceil_dlp.middleware.detect_pii_in_text", return_value={}):
+        result = await handler.async_pre_call_hook(
+            user_api_key_dict=None,
+            cache=None,
+            data=data,
+            call_type="completion",
+        )
+
+        # Should mask email (default policy is mask for email)
+        assert isinstance(result, dict)
+        # PDF should be redacted in the result
+        result_messages = result.get("messages", [])
+        assert len(result_messages) > 0
+        # Check that PDF URL was modified (contains redacted base64, different from original)
+        pdf_item = result_messages[0]["content"][0]
+        assert pdf_item["file"]["url"] != f"data:application/pdf;base64,{pdf_base64}"
+        assert pdf_item["file"]["url"].startswith("data:application/pdf;base64,")
+
+
+@pytest.mark.asyncio
+async def test_middleware_pre_call_hook_pdf_blocked():
+    """Test pre_call_hook blocking request when PDF contains blocked PII."""
+    import base64
+
+    from ceil_dlp.config import Config, Policy
+
+    # Configure to block credit cards
+    config = Config()
+    config.policies["credit_card"] = Policy(action="block", enabled=True)
+    handler = CeilDLPHandler(config=config)
+
+    from ceil_dlp.utils import create_pdf_with_text
+
+    pdf_bytes = create_pdf_with_text("Card: 4111111111111111")
+    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {"url": f"data:application/pdf;base64,{pdf_base64}"},
+                }
+            ],
+        }
+    ]
+
+    data = {"model": "gpt-4", "messages": messages, "litellm_call_id": "test123"}
+
+    with patch("ceil_dlp.middleware.detect_pii_in_text", return_value={}):
+        result = await handler.async_pre_call_hook(
+            user_api_key_dict=None,
+            cache=None,
+            data=data,
+            call_type="completion",
+        )
+
+        # Should block the request
+        assert isinstance(result, str)
+        assert "blocked" in result.lower()
+        assert "credit_card" in result.lower()
+
+
+def test_middleware_process_pii_detection_with_pdf():
+    """Test _process_pii_detection with PDF containing PII."""
+    import base64
+
+    from ceil_dlp.utils import create_pdf_with_text
+
+    handler = CeilDLPHandler()
+    pdf_bytes = create_pdf_with_text("Contact: john@example.com")
+    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Hello"},
+                {
+                    "type": "file",
+                    "file": {"url": f"data:application/pdf;base64,{pdf_base64}"},
+                },
+            ],
+        }
+    ]
+
+    # Use real PDF detection (no mock)
+    detections, blocked_types, masked_types, text_content, images_with_pii, pdfs_with_pii = (
+        handler._process_pii_detection(messages, "gpt-4")
+    )
+
+    # Should detect email from PDF
+    assert "email" in detections
+    assert len(pdfs_with_pii) == 1
+    assert pdfs_with_pii[0][0] == pdf_bytes
+    assert "email" in pdfs_with_pii[0][1]
+
+
+def test_middleware_extract_pdfs_from_messages_string_file_data():
+    """Test PDF extraction with string file data."""
+    import base64
+
+    from ceil_dlp.utils import create_pdf_with_text
+
+    handler = CeilDLPHandler()
+    pdf_bytes = create_pdf_with_text("Test PDF content")
+    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": f"data:application/pdf;base64,{pdf_base64}",  # String instead of dict
+                }
+            ],
+        }
+    ]
+
+    pdfs = handler._extract_pdfs_from_messages(messages)
+    assert len(pdfs) == 1
+    assert pdfs[0] == pdf_bytes
+
+
+def test_middleware_extract_pdfs_from_messages_document_url():
+    """Test PDF extraction with document_url type."""
+    import base64
+
+    from ceil_dlp.utils import create_pdf_with_text
+
+    handler = CeilDLPHandler()
+    pdf_bytes = create_pdf_with_text("Test PDF content")
+    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "document_url",
+                    "document_url": {"url": f"data:application/pdf;base64,{pdf_base64}"},
+                }
+            ],
+        }
+    ]
+
+    pdfs = handler._extract_pdfs_from_messages(messages)
+    assert len(pdfs) == 1
+    assert pdfs[0] == pdf_bytes
+
+
+def test_middleware_pdf_redaction_document_url_type():
+    """Test PDF redaction with document_url type."""
+    import base64
+
+    from ceil_dlp.middleware import detect_pii_in_pdf
+    from ceil_dlp.utils import create_pdf_with_text
+
+    handler = CeilDLPHandler()
+    pdf_bytes = create_pdf_with_text("Contact: john@example.com")
+    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "document_url",
+                    "document_url": {"url": f"data:application/pdf;base64,{pdf_base64}"},
+                }
+            ],
+        }
+    ]
+
+    # Use real detection
+    detections = detect_pii_in_pdf(pdf_bytes)
+    assert "email" in detections, "Email should be detected"
+    pdfs_with_pii = [(pdf_bytes, detections)]
+    pii_types_to_mask = {"email"}
+
+    # Use real redaction (no mock)
+    modified = handler._redact_pdfs_in_messages(messages, pdfs_with_pii, pii_types_to_mask)
+
+    assert modified != messages
+    pdf_item = modified[0]["content"][0]
+    assert pdf_item["type"] == "document_url"
+    # Should be different from original
+    assert pdf_item["document_url"]["url"] != f"data:application/pdf;base64,{pdf_base64}"
+    assert pdf_item["document_url"]["url"].startswith("data:application/pdf;base64,")
+
+
+def test_middleware_pdf_redaction_string_file_data():
+    """Test PDF redaction with string file data."""
+    import base64
+
+    from ceil_dlp.middleware import detect_pii_in_pdf
+    from ceil_dlp.utils import create_pdf_with_text
+
+    handler = CeilDLPHandler()
+    pdf_bytes = create_pdf_with_text("Contact: john@example.com")
+    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": f"data:application/pdf;base64,{pdf_base64}",  # String instead of dict
+                }
+            ],
+        }
+    ]
+
+    # Use real detection
+    detections = detect_pii_in_pdf(pdf_bytes)
+    assert "email" in detections, "Email should be detected"
+    pdfs_with_pii = [(pdf_bytes, detections)]
+    pii_types_to_mask = {"email"}
+
+    # Use real redaction (no mock)
+    modified = handler._redact_pdfs_in_messages(messages, pdfs_with_pii, pii_types_to_mask)
+
+    assert modified != messages
+    pdf_item = modified[0]["content"][0]
+    assert pdf_item["type"] == "file"
+    # Should be different from original
+    assert pdf_item["file"] != f"data:application/pdf;base64,{pdf_base64}"
+    assert pdf_item["file"].startswith("data:application/pdf;base64,")

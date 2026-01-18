@@ -1,0 +1,9 @@
+# ceil-dlp Configuration for PDF Redaction Testing
+# This config masks ALL detected PII types using default_policy
+
+mode: enforce # observe | enforce
+
+# Mask all detected PII types by default (no need to list each one)
+default_policy:
+  action: mask
+  enabled: true

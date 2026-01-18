@@ -83,10 +83,10 @@ class AuditLogger:
         Args:
             user_id: User identifier (if available)
             pii_type: Type of PII detected
-            action: Action taken (block/mask/observe/warn)
+            action: Action taken (block/mask/observe)
             redacted_items: List of detected PII values (will be hashed)
             request_id: Request identifier (if available)
-            mode: Operational mode (observe/warn/enforce)
+            mode: Operational mode (observe/enforce)
         """
         hashed_items = [hash_pii(item, length=16) for item in redacted_items]
 
@@ -119,7 +119,7 @@ class AuditLogger:
             user_id: User identifier
             pii_types: List of PII types that caused the block
             request_id: Request identifier
-            mode: Operational mode (observe/warn/enforce)
+            mode: Operational mode (observe/enforce)
         """
         # Use extra parameter to pass structured data to JSON logger
         extra_data = {

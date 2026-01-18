@@ -172,9 +172,9 @@ def test_detect_with_presidio_exception_handling():
     """Test Presidio exception handling."""
 
     # Clear the cache to ensure we get a fresh analyzer
-    from ceil_dlp.detectors.presidio_adapter import get_analyzer
+    from ceil_dlp.detectors.presidio_adapter import _get_analyzer_cached
 
-    get_analyzer.cache_clear()
+    _get_analyzer_cached.cache_clear()
 
     # Mock AnalyzerEngine to raise an exception
     with patch("ceil_dlp.detectors.presidio_adapter.AnalyzerEngine") as mock_analyzer_class:
@@ -182,10 +182,10 @@ def test_detect_with_presidio_exception_handling():
         mock_analyzer.analyze.side_effect = Exception("Test error")
 
         # Clear cache again to pick up the mock
-        get_analyzer.cache_clear()
+        _get_analyzer_cached.cache_clear()
 
         with pytest.raises(RuntimeError, match="Failed to detect PII with Presidio"):
             detect_with_presidio("test text")
 
     # Clear cache after test to restore real analyzer for other tests
-    get_analyzer.cache_clear()
+    _get_analyzer_cached.cache_clear()
