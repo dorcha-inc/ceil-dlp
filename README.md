@@ -66,6 +66,23 @@ This will remove the callback from your LiteLLM config. You can also use `--remo
 
 `ceil-dlp` also provides image and PDF support, detecting both PII and secrets in images + pdfs through OCR,. It applies automatically to all requests via LiteLLM's callback system, so you don't need to specify a `guardrails` parameter on every request. Finally, it supports both blocking and masking actions for all detection types, giving you full control over how sensitive data is handled.
 
+### Ensemble Model Architecture
+
+`ceil-dlp` uses a unique ensemble approach that combines multiple models to maximize PII detection accuracy while minimizing false negatives. The ensemble architecture operates at two levels:
+
+#### NER Ensemble
+
+You can choose between three configurable detection strength levels. Level 1 uses spaCy's `en_core_web_lg` model, level 2
+additionally uses a transformer-based model (`dslim/bert-base-NER`), and level 3 
+uses GLiNER (`urchade/gliner_multi_pii-v1`) in addition to the models in the previous levels. All models detect PII + PHI + 
+Secrets on the original text independently. The detected results are then merged. This "detect everything first, merge later" approach ensures maximum coverage since each model sees the complete, unredacted text.
+
+#### OCR Ensemble
+
+For images and PDFs, `ceil-dlp` uses a sequential multi-pass OCR ensemble. This also has three configurable 
+ocr strength levels. Level 1 uses a lightweight docTR model. Level 2 uses Tesseract as a second model. Finally,
+level 3 uses a more heavy-weight docTR model. Each OCR engine runs on the previously-redacted image in sequence. This sequential approach is helpful for images because OCR engines can still read surrounding context after redaction (unlike text where redaction destroys information). The intuition behind this is that different OCR engines have different strengths e.g some are better at handwriting, others at printed text etc. and that running multiple passes will catch PII that any single OCR engine might miss.
+
 ### Existing LiteLLM Guardrails
 
 LiteLLM offers built-in [guardrails](https://docs.litellm.ai/docs/proxy/guardrails/quick_start) for many tasks involving LLM interaction security. However, we were unable to find a solution that helps with all the features a person or team working with sensitive data in a real-world LLM interaction would require.
