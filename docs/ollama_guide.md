@@ -47,7 +47,14 @@ ollama list
 We recommend using [uv](https://docs.astral.sh/uv/) but regular `pip` also works:
 
 ```bash
-uv pip install 'litellm[proxy]' 'ceil-dlp[models]'
+uv pip install 'litellm[proxy]' ceil-dlp
+```
+
+Download required spaCy models:
+
+```bash
+uv run python -m spacy download en_core_web_lg
+uv run python -m spacy download en_core_web_sm
 ```
 
 ## Setup

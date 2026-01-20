@@ -26,11 +26,20 @@
 
 ## Usage
 
-Install ceil-dlp with required spaCy models:
+Install ceil-dlp:
 
 ```bash
-pip install 'ceil-dlp[models]'
+pip install ceil-dlp
 ```
+
+Download required spaCy models:
+
+```bash
+python -m spacy download en_core_web_lg
+python -m spacy download en_core_web_sm
+```
+
+Note: If using `uv`, use `uv run python` instead of `python` to ensure models are installed in the correct environment.
 
 Then use the CLI to automatically configure LiteLLM:
 
