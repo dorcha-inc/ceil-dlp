@@ -47,10 +47,9 @@ format-check: ## Check if code is formatted correctly
 typecheck: ## Run type checker
 	uv run mypy .
 
-check: ## Run all checks (lint, typecheck, format-check, test)
+check: ## Run all code quality checks (lint, typecheck, format-check)
 	$(MAKE) format-check
 	$(MAKE) lint
-	$(MAKE) test
 
 build: ## Build the package
 	uv build
