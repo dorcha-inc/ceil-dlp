@@ -5,7 +5,7 @@
 <div align="center">
   <img src="https://raw.githubusercontent.com/dorcha-inc/ceil-dlp/main/share/ceil-dlp-logo-no-bg-logo.png" alt="ceil-dlp logo" width="400">
   
-  <p>Open-Source DLP for LLMs and Agentic Workflows</p>
+  <p>Open-Source DLP for LLMs and Agentic Workflows with Conversational Coherence</p>
 </div>
 
 <p align="center">
@@ -16,7 +16,7 @@
   <a href="https://codecov.io/gh/dorcha-inc/ceil-dlp"><img src="https://codecov.io/gh/dorcha-inc/ceil-dlp/branch/main/graph/badge.svg" alt="Coverage"></a>
 </p>
 
-`ceil-dlp` is a Data Loss Prevention (DLP) plugin for [LiteLLM](https://github.com/BerriAI/litellm) that automatically detects and protects Personally Identifiable Information (PII) in LLM requests. This includes PII in text, images, and PDFs. It blocks, masks, or logs sensitive data before it reaches your LLM provider. This helps prevent you from leaking your secrets, API keys, and other sensitive information. It also helps you ensure compliance with data privacy regulations like HIPAA, PCI-DSS, GDPR, and CCPA.
+`ceil-dlp` is a Data Loss Prevention (DLP) plugin for [LiteLLM](https://github.com/BerriAI/litellm) that automatically detects and protects Personally Identifiable Information (PII) in LLM requests. This includes PII in text, images, and PDFs. It blocks, masks, or uses reversible tokens to protect sensitive data before it reaches your LLM provider. This helps prevent you from leaking your secrets, API keys, and other sensitive information. If used with reversible tokens, `ceil-dlp` allows you to preserve conversational coherence so users can have natural conversations despite the DLP protections. Finally, `ceil-dlp` also helps you ensure compliance with data privacy regulations like HIPAA, PCI-DSS, GDPR, and CCPA.
 
 <div align="center">
   <img src="https://raw.githubusercontent.com/dorcha-inc/ceil-dlp/main/share/dl_real_id_fade.gif" alt="real id redacted" width="260">
