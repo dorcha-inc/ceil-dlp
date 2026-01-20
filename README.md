@@ -78,7 +78,7 @@ This will remove the callback from your LiteLLM config. You can also use `--remo
 An important feature in `ceil-dlp` is that it can do DLP while preserving *conversarional coherence*. In addition to masking, blocking, 
 and observinb, `ceil-dlp` includes a separate DLP mode called `whistledown`. whistledown (based on our [preprint](https://arxiv.org/pdf/2511.13319)), is designed to preserve conversational context by using consistent, reversible tokens instead of generic redaction markers.
 
-## Preserving Conversational Coherence
+### Preserving Conversational Coherence
 
 <div align="center">
   <img src="https://raw.githubusercontent.com/dorcha-inc/ceil-dlp/main/share/whistledown_mode.png" alt="Whistledown mode diagram" width="800">
