@@ -18,7 +18,7 @@ class ModelRules(BaseModel):
 class Policy(BaseModel):
     """Represents a DLP policy for a PII type."""
 
-    action: Literal["block", "mask", "observe"]
+    action: Literal["block", "mask", "observe", "whistledown"]
     enabled: bool = Field(
         default=True, description="Whether to apply this policy. If False, the policy is ignored."
     )

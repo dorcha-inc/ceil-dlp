@@ -17,6 +17,7 @@ from ceil_dlp.detectors.model_matcher import matches_model
 from ceil_dlp.detectors.pdf_detector import detect_pii_in_pdf
 from ceil_dlp.detectors.text_detector import detect_pii_in_text
 from ceil_dlp.redaction import redact_image, redact_pdf, redact_text
+from ceil_dlp.whistledown import WhistledownCache, whistledown_transform_text
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,7 @@ class CeilDLPHandler(CustomLogger):
             set(self.config.enabled_pii_types) if self.config.enabled_pii_types else None
         )
         self.audit_logger = AuditLogger(log_path=self.config.audit_log_path)
+        self.whistledown_cache = WhistledownCache()
 
         # Log initialization
         logger.info(
@@ -140,6 +142,7 @@ class CeilDLPHandler(CustomLogger):
         dict[str, list[tuple[str, int, int]]],
         list[str],
         dict[str, list[tuple[str, int, int]]],
+        dict[str, list[tuple[str, int, int]]],
         str,
         list[tuple[bytes, dict[str, list[tuple[str, int, int]]]]],
         list[tuple[bytes, dict[str, list[tuple[str, int, int]]]]],
@@ -152,7 +155,7 @@ class CeilDLPHandler(CustomLogger):
             model: Model name
 
         Returns:
-            Tuple of (detections, blocked_types, masked_types, text_content, images_with_pii, pdfs_with_pii)
+            Tuple of (detections, blocked_types, masked_types, whistledown_types, text_content, images_with_pii, pdfs_with_pii)
             where images_with_pii and pdfs_with_pii are lists of (data, detections) tuples
         """
         # Extract text, images, and PDFs from messages
@@ -206,11 +209,12 @@ class CeilDLPHandler(CustomLogger):
                     detections[pii_type].extend(matches)
 
         if not detections:
-            return {}, [], {}, text_content, [], []
+            return {}, [], {}, {}, text_content, [], []
 
         # Check policies and determine actions
         blocked_types = []
         masked_types = {}
+        whistledown_types = {}
 
         for pii_type, matches in detections.items():
             policy = self.config.get_policy(pii_type)
@@ -225,8 +229,18 @@ class CeilDLPHandler(CustomLogger):
                 blocked_types.append(pii_type)
             elif policy.action == "mask":
                 masked_types[pii_type] = matches
+            elif policy.action == "whistledown":
+                whistledown_types[pii_type] = matches
 
-        return detections, blocked_types, masked_types, text_content, images_with_pii, pdfs_with_pii
+        return (
+            detections,
+            blocked_types,
+            masked_types,
+            whistledown_types,
+            text_content,
+            images_with_pii,
+            pdfs_with_pii,
+        )
 
     async def async_pre_call_hook(  # type: ignore[override]
         self,
@@ -282,6 +296,7 @@ class CeilDLPHandler(CustomLogger):
                 detections,
                 blocked_types,
                 masked_types,
+                whistledown_types,
                 text_content,
                 images_with_pii,
                 pdfs_with_pii,
@@ -290,6 +305,7 @@ class CeilDLPHandler(CustomLogger):
             logger.debug(
                 f"CeilDLP detection results: detections={list(detections.keys())}, "
                 f"blocked_types={blocked_types}, masked_types={list(masked_types.keys())}, "
+                f"whistledown_types={list(whistledown_types.keys())}, "
                 f"mode={self.config.mode}"
             )
 
@@ -373,6 +389,50 @@ class CeilDLPHandler(CustomLogger):
                             mode=mode,
                         )
 
+                if whistledown_types:
+                    request_id = data.get("litellm_call_id", "unknown")
+                    transformed_text, transformed_items = whistledown_transform_text(
+                        text_content,
+                        detections=whistledown_types,
+                        cache=self.whistledown_cache,
+                        request_id=request_id,
+                    )
+
+                    # Update messages with transformed text
+                    modified_messages = self._replace_text_in_messages(
+                        messages, text_content, transformed_text
+                    )
+
+                    # Note(jadidbourbaki): Images and PDFs with Whistledown action fall back to masking
+                    # since overlaying replacement tokens on images is complex
+                    if images_with_pii:
+                        image_pii_types_to_mask = set(whistledown_types.keys())
+                        modified_messages = self._redact_images_in_messages(
+                            modified_messages, images_with_pii, image_pii_types_to_mask
+                        )
+
+                    if pdfs_with_pii:
+                        pdf_pii_types_to_mask = set(whistledown_types.keys())
+                        modified_messages = self._redact_pdfs_in_messages(
+                            modified_messages, pdfs_with_pii, pdf_pii_types_to_mask
+                        )
+
+                    data["messages"] = modified_messages
+
+                    # Store request_id for post-call hook to reverse transformations
+                    data["_whistledown_request_id"] = request_id
+
+                    # Log the transformation
+                    for pii_type, items in transformed_items.items():
+                        self.audit_logger.log_detection(
+                            user_id=user_id,
+                            pii_type=pii_type,
+                            action="whistledown",
+                            redacted_items=items,
+                            request_id=request_id,
+                            mode=mode,
+                        )
+
                 return data
 
         except Exception as e:
@@ -382,15 +442,17 @@ class CeilDLPHandler(CustomLogger):
 
     async def async_post_call_success_hook(
         self,
-        data: dict[str, Any],  # noqa: ARG002
+        data: dict[str, Any],
         user_api_key_dict: UserAPIKeyAuth | None,  # noqa: ARG002
-        response: Any,  # noqa: ARG002
+        response: Any,
     ) -> Any | None:
         """
         Hook called after successful LLM response.
 
-        Currently a no-op. Reserved for future DLP features like deanonymization
-        (reversing pseudonyms in responses).
+        For Whistledown types, this reverses the pseudonymization so the user sees
+        original values in the response, preserving conversational coherence.
+
+        Based on the Whistledown paper: https://arxiv.org/pdf/2511.13319
 
         Args:
             data: Request data dictionary
@@ -398,11 +460,40 @@ class CeilDLPHandler(CustomLogger):
             response: LLM response object
 
         Returns:
-            Modified response or None (no modifications)
+            Modified response with reversed transformations, or None (no modifications)
         """
-        # Note(jadidbourbaki): noop for now, the plan is to add something like Whistledown here [1].
-        # [1]: https://arxiv.org/pdf/2511.13319
-        return None
+        try:
+            # Check if this request used Whistledown
+            request_id = data.get("_whistledown_request_id")
+            if not request_id:
+                return None
+
+            logger.debug(f"reversing whistledown transformations for request_id={request_id}")
+
+            # Transform response content back to original values
+            # Handle both streaming and non-streaming responses
+            if hasattr(response, "choices"):
+                for choice in response.choices:
+                    if (
+                        hasattr(choice, "message")
+                        and hasattr(choice.message, "content")
+                        and choice.message.content
+                    ):
+                        # Reverse transform the content
+                        original_content = self.whistledown_cache.reverse_transform(
+                            request_id, choice.message.content
+                        )
+                        choice.message.content = original_content
+                        logger.debug(f"reversed message content for request_id={request_id}")
+
+            # Clean up cache for this request
+            self.whistledown_cache.clear_request(request_id)
+
+            return response
+
+        except Exception as e:
+            logger.error(f"error in post_call_hook: {e}", exc_info=True)
+            return None
 
     def _extract_text_from_messages(self, messages: list[Any]) -> str:
         """Extract text content from LiteLLM messages format."""

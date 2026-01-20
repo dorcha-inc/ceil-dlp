@@ -66,6 +66,49 @@ This will remove the callback from your LiteLLM config. You can also use `--remo
 
 `ceil-dlp` also provides image and PDF support, detecting both PII and secrets in images + pdfs through OCR,. It applies automatically to all requests via LiteLLM's callback system, so you don't need to specify a `guardrails` parameter on every request. Finally, it supports both blocking and masking actions for all detection types, giving you full control over how sensitive data is handled.
 
+An important feature in `ceil-dlp` is that it can do DLP while preserving *conversarional coherence*. In addition to masking, blocking, 
+and observinb, `ceil-dlp` includes a separate DLP mode called `whistledown`. whistledown (based on our [preprint](https://arxiv.org/pdf/2511.13319)), is designed to preserve conversational context by using consistent, reversible tokens instead of generic redaction markers.
+
+## Preserving Conversational Coherence
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/dorcha-inc/ceil-dlp/main/share/whistledown_mode.png" alt="Whistledown mode diagram" width="800">
+</div>
+
+Traditional masking works something like this:
+
+```
+User: "My name is John Doe and my email is john@example.com"
+-> LLM sees: "My name is [REDACTED_PERSON] and my email is [REDACTED_EMAIL]"
+-> User sees: "Hello [REDACTED_PERSON]! I'll send details to [REDACTED_EMAIL]"
+```
+
+In whistledown mode, `ceil-dlp` does the following instead:
+
+```
+User: "My name is John Doe and my email is john@example.com"
+-> LLM sees: "My name is PERSON_1 and my email is EMAIL_1"
+-> LLM responds: "Hello PERSON_1! I'll send details to EMAIL_1"
+-> User sees: "Hello John Doe! I'll send details to john@example.com"
+```
+
+In other words, `ceil-dlp` masks in a way that maintains a one-to-one correspondence between the original entities and the masked entities. `ceil-dlp` then automatically reverses the transformations in LLM responses, restoring the original values for the user. This maintains conversational flow while protecting sensitive data from being sent to external LLM providers.
+
+To enable Whistledown mode, set the action to `whistledown` in your `ceil-dlp.yaml` configuration:
+
+```yaml
+policies:
+  person:
+    action: whistledown  # Use consistent tokens instead of [REDACTED_PERSON]
+    enabled: true
+  
+  email:
+    action: whistledown
+    enabled: true
+```
+
+Note that you can mix actions within the same configuration. For example, using `whistledown` for person names and emails while using `block` for credit cards and API keys.
+
 ### Ensemble Model Architecture
 
 `ceil-dlp` uses a unique ensemble approach that combines multiple models to maximize PII detection accuracy while minimizing false negatives. The ensemble architecture operates at two levels:

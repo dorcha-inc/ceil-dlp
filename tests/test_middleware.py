@@ -1340,9 +1340,15 @@ def test_middleware_process_pii_detection_with_pdf():
     ]
 
     # Use real PDF detection (no mock)
-    detections, blocked_types, masked_types, text_content, images_with_pii, pdfs_with_pii = (
-        handler._process_pii_detection(messages, "gpt-4")
-    )
+    (
+        detections,
+        blocked_types,
+        masked_types,
+        whistledown_types,
+        text_content,
+        images_with_pii,
+        pdfs_with_pii,
+    ) = handler._process_pii_detection(messages, "gpt-4")
 
     # Should detect email from PDF
     assert "email" in detections
@@ -1483,3 +1489,276 @@ def test_middleware_pdf_redaction_string_file_data():
     # Should be different from original
     assert pdf_item["file"] != f"data:application/pdf;base64,{pdf_base64}"
     assert pdf_item["file"].startswith("data:application/pdf;base64,")
+
+
+@pytest.mark.asyncio
+async def test_middleware_whistledown_transform():
+    """Test Whistledown transformation in pre_call_hook."""
+    config = Config(
+        policies={
+            "person": Policy(action="whistledown", enabled=True),
+            "email": Policy(action="whistledown", enabled=True),
+        },
+        mode="enforce",
+        ner_strength=1,
+    )
+    handler = CeilDLPHandler(config=config)
+
+    data = {
+        "model": "gpt-4",
+        "messages": [
+            {
+                "role": "user",
+                "content": "My name is John Doe and my email is john@example.com",
+            }
+        ],
+        "litellm_call_id": "test-request-123",
+    }
+
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None, cache=None, data=data, call_type="completion"
+    )
+
+    # Should return modified data
+    assert isinstance(result, dict)
+    assert "_whistledown_request_id" in result
+    assert result["_whistledown_request_id"] == "test-request-123"
+
+    # Check that text was transformed
+    modified_content = result["messages"][0]["content"]
+    assert "PERSON_1" in modified_content
+    assert "EMAIL_1" in modified_content
+    assert "John Doe" not in modified_content
+    assert "john@example.com" not in modified_content
+
+
+@pytest.mark.asyncio
+async def test_middleware_whistledown_reverse_transform():
+    """Test Whistledown reverse transformation in post_call_hook."""
+    config = Config(
+        policies={
+            "person": Policy(action="whistledown", enabled=True),
+        },
+        mode="enforce",
+        ner_strength=1,
+    )
+    handler = CeilDLPHandler(config=config)
+
+    # First, do a pre_call to set up the cache
+    data = {
+        "model": "gpt-4",
+        "messages": [{"role": "user", "content": "Tell me about John Doe"}],
+        "litellm_call_id": "test-request-456",
+    }
+
+    pre_result = await handler.async_pre_call_hook(
+        user_api_key_dict=None, cache=None, data=data, call_type="completion"
+    )
+
+    # Verify transformation happened
+    assert isinstance(pre_result, dict)
+    assert "_whistledown_request_id" in pre_result
+
+    # Create a mock response with Whistledown tokens
+    class MockMessage:
+        def __init__(self):
+            self.content = "PERSON_1 is a software developer who works on AI projects."
+
+    class MockChoice:
+        def __init__(self):
+            self.message = MockMessage()
+
+    class MockResponse:
+        def __init__(self):
+            self.choices = [MockChoice()]
+
+    response = MockResponse()
+
+    # Call post_call_hook to reverse the transformation
+    reversed_response = await handler.async_post_call_success_hook(
+        data=pre_result, user_api_key_dict=None, response=response
+    )
+
+    # Check that the transformation was reversed
+    assert reversed_response is not None
+    assert reversed_response.choices[0].message.content == (
+        "John Doe is a software developer who works on AI projects."
+    )
+
+
+@pytest.mark.asyncio
+async def test_middleware_whistledown_consistency():
+    """Test that Whistledown maintains consistency across same request."""
+    config = Config(
+        policies={
+            "person": Policy(action="whistledown", enabled=True),
+        },
+        mode="enforce",
+        ner_strength=1,
+    )
+    handler = CeilDLPHandler(config=config)
+
+    # Prompt mentions same person multiple times
+    data = {
+        "model": "gpt-4",
+        "messages": [
+            {
+                "role": "user",
+                "content": "John Doe is great. I really like John Doe. Tell me more about John Doe.",
+            }
+        ],
+        "litellm_call_id": "test-request-789",
+    }
+
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None, cache=None, data=data, call_type="completion"
+    )
+
+    # All instances should be replaced with same token
+    assert isinstance(result, dict)
+    modified_content = result["messages"][0]["content"]
+    assert modified_content.count("PERSON_1") == 3
+    assert "John Doe" not in modified_content
+
+
+@pytest.mark.asyncio
+async def test_middleware_whistledown_multiple_people():
+    """Test Whistledown with multiple different people."""
+    config = Config(
+        policies={
+            "person": Policy(action="whistledown", enabled=True),
+        },
+        mode="enforce",
+        ner_strength=1,
+    )
+    handler = CeilDLPHandler(config=config)
+
+    data = {
+        "model": "gpt-4",
+        "messages": [
+            {
+                "role": "user",
+                "content": "John Doe and Jane Smith are colleagues. John Doe likes Python, Jane Smith likes JavaScript.",
+            }
+        ],
+        "litellm_call_id": "test-request-multi",
+    }
+
+    result = await handler.async_pre_call_hook(
+        user_api_key_dict=None, cache=None, data=data, call_type="completion"
+    )
+
+    assert isinstance(result, dict)
+    modified_content = result["messages"][0]["content"]
+    assert "PERSON_1" in modified_content
+    assert "PERSON_2" in modified_content
+    assert "John Doe" not in modified_content
+    assert "Jane Smith" not in modified_content
+
+
+@pytest.mark.asyncio
+async def test_middleware_whistledown_mixed_actions():
+    """Test Whistledown combined with other actions (block, mask)."""
+    config = Config(
+        policies={
+            "person": Policy(action="whistledown", enabled=True),
+            "email": Policy(action="mask", enabled=True),
+            "credit_card": Policy(action="block", enabled=True),
+        },
+        mode="enforce",
+        ner_strength=1,
+    )
+    handler = CeilDLPHandler(config=config)
+
+    # This should be blocked due to credit card
+    data_blocked = {
+        "model": "gpt-4",
+        "messages": [{"role": "user", "content": "My credit card is 4111-1111-1111-1111"}],
+        "litellm_call_id": "test-blocked",
+    }
+
+    result_blocked = await handler.async_pre_call_hook(
+        user_api_key_dict=None, cache=None, data=data_blocked, call_type="completion"
+    )
+
+    # Should be blocked (string rejection)
+    assert isinstance(result_blocked, str)
+    assert "blocked" in result_blocked.lower()
+
+    # This should apply both whistledown and mask
+    data_mixed = {
+        "model": "gpt-4",
+        "messages": [
+            {
+                "role": "user",
+                "content": "I'm John Doe, email john@example.com",
+            }
+        ],
+        "litellm_call_id": "test-mixed",
+    }
+
+    result_mixed = await handler.async_pre_call_hook(
+        user_api_key_dict=None, cache=None, data=data_mixed, call_type="completion"
+    )
+
+    assert isinstance(result_mixed, dict)
+    modified_content = result_mixed["messages"][0]["content"]
+    # Person should use Whistledown
+    assert "PERSON_1" in modified_content
+    # Email should be masked
+    assert "[REDACTED_EMAIL]" in modified_content or "EMAIL_1" not in modified_content
+
+
+@pytest.mark.asyncio
+async def test_middleware_whistledown_cache_cleanup():
+    """Test that Whistledown cache is cleaned up after post_call."""
+    config = Config(
+        policies={
+            "person": Policy(action="whistledown", enabled=True),
+        },
+        mode="enforce",
+        ner_strength=1,
+    )
+    handler = CeilDLPHandler(config=config)
+
+    request_id = "test-cleanup-123"
+
+    # Pre-call
+    data = {
+        "model": "gpt-4",
+        "messages": [{"role": "user", "content": "Tell me about John Doe"}],
+        "litellm_call_id": request_id,
+    }
+
+    pre_result = await handler.async_pre_call_hook(
+        user_api_key_dict=None, cache=None, data=data, call_type="completion"
+    )
+    assert isinstance(pre_result, dict)
+
+    # Verify cache has data
+    stats_before = handler.whistledown_cache.get_stats(request_id)
+    assert stats_before["mapping_count"] > 0
+
+    # Mock response
+    class MockMessage:
+        def __init__(self):
+            self.content = "PERSON_1 is great"
+
+    class MockChoice:
+        def __init__(self):
+            self.message = MockMessage()
+
+    class MockResponse:
+        def __init__(self):
+            self.choices = [MockChoice()]
+
+    response = MockResponse()
+
+    # Post-call
+    await handler.async_post_call_success_hook(
+        data=pre_result, user_api_key_dict=None, response=response
+    )
+
+    # Verify cache was cleared
+    stats_after = handler.whistledown_cache.get_stats(request_id)
+    assert stats_after["mapping_count"] == 0

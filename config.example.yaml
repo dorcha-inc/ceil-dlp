@@ -12,11 +12,17 @@ mode: enforce
 # If not specified, PII types without explicit policies are treated as "observe"
 # Uncomment to mask all detected PII by default:
 # default_policy:
-#   action: mask  # block | mask
+#   action: mask  # block | mask | whistledown
 #   enabled: true
 
-# Policies: Define how each PII type is handled
-# Explicit policies override default_policy
+# An overview of the different actions:
+# - block: Reject the request entirely if this PII type is detected
+# - mask: Replace the PII with [REDACTED_TYPE] tags (e.g., [REDACTED_EMAIL]) before sending to the LLM.
+# - whistledown: Replace the PII in the prompt with consistent tokens (e.g., PERSON_1, EMAIL_2) before sending to the LLM.
+#                These tokens are swapped back in the response to maintain conversational coherence.
+# - observe: Log the detection but don't modify the request
+
+# Policies: Define how each PII type is handled. Explicit policies override default_policy.
 policies:
   # High-risk items - block by default (recommended)
   credit_card:
@@ -72,11 +78,15 @@ policies:
   # Additional PII types supported by Presidio
   # These are detected by Presidio and can be configured similarly
   person:
-    action: mask
+    action: whistledown
     enabled: true
+    # Whistledown mode is a good choice for person names as it preserves context
+    # while protecting identity. Each person gets a consistent token (PERSON_1, PERSON_2)
+    # throughout the conversation, and the LLM's response is automatically
+    # converted back to the original names for the user.
 
   location:
-    action: mask
+    action: whistledown
     enabled: true
 
   ip_address:
