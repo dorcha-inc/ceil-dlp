@@ -47,7 +47,7 @@ ollama list
 We recommend using [uv](https://docs.astral.sh/uv/) but regular `pip` also works:
 
 ```bash
-uv pip install 'litellm[proxy]' ceil-dlp
+uv pip install 'litellm[proxy]' 'ceil-dlp[models]'
 ```
 
 ## Setup

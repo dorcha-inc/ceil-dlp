@@ -360,8 +360,6 @@ name = "ceil-dlp"
 version = "1.3.0"
 source = { editable = "." }
 dependencies = [
-    { name = "en-core-web-lg" },
-    { name = "en-core-web-sm" },
     { name = "gliner" },
     { name = "litellm", extra = ["proxy"] },
     { name = "pillow" },
@@ -388,11 +386,15 @@ dev = [
     { name = "types-pyyaml" },
     { name = "types-setuptools" },
 ]
+models = [
+    { name = "en-core-web-lg" },
+    { name = "en-core-web-sm" },
+]
 
 [package.metadata]
 requires-dist = [
-    { name = "en-core-web-lg", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl" },
-    { name = "en-core-web-sm", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
+    { name = "en-core-web-lg", marker = "extra == 'models'", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl" },
+    { name = "en-core-web-sm", marker = "extra == 'models'", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
     { name = "gliner", specifier = ">=0.2.0" },
     { name = "litellm", extras = ["proxy"], specifier = ">=1.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
@@ -415,7 +417,7 @@ requires-dist = [
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "types-setuptools", marker = "extra == 'dev'", specifier = ">=69.0.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "models"]
 
 [[package]]
 name = "certifi"

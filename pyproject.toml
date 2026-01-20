@@ -56,10 +56,6 @@ dependencies = [
     "spacy-huggingface-pipelines>=0.0.1", # Required for transformer-based NER models
     "transformers>=4.20.0",               # Required for transformer-based NER models
     "gliner>=0.2.0",                      # Required for GLiNER-based NER (ner_strength=3)
-    # spaCy models - required for NER detection
-    # These are installed as direct URL dependencies (not on PyPI, distributed via GitHub releases)
-    "en_core_web_lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl",
-    "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
 ]
 
 [project.optional-dependencies]
@@ -71,6 +67,10 @@ dev = [
     "ruff>=0.1.0",
     "types-PyYAML>=6.0.0",
     "types-setuptools>=69.0.0",
+]
+models = [
+    "en_core_web_lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl",
+    "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
 ]
 
 [project.urls]

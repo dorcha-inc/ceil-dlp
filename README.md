@@ -26,10 +26,10 @@
 
 ## Usage
 
-Install ceil-dlp:
+Install ceil-dlp with required spaCy models:
 
 ```bash
-uv pip install ceil-dlp
+pip install 'ceil-dlp[models]'
 ```
 
 Then use the CLI to automatically configure LiteLLM:
